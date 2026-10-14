@@ -34,10 +34,12 @@
     return `${L.days[Logic.weekday(s)]} ${d}.${m}`;
   }
   function schedText(schedule) {
-    if (!schedule || !schedule.length) return 'нет расписания';
-    return [...schedule]
+    const t = Logic.today();
+    const cur = Logic.currentSchedule(schedule, t);
+    if (!cur.length) return 'нет расписания';
+    return [...cur]
       .sort((a, b) => a.day - b.day || a.time.localeCompare(b.time))
-      .map((s) => `${L.days[s.day]} ${s.time}`)
+      .map((s) => `${L.days[s.day]} ${s.time}${s.from && s.from > t ? ` (с ${fmtShort(s.from)})` : ''}${s.to ? ` (до ${fmtShort(s.to)})` : ''}`)
       .join(', ');
   }
   function lessonsWord(n) {

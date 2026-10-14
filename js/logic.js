@@ -27,6 +27,41 @@
     return [`${y}-${pad(m)}-01`, `${y}-${pad(m)}-${pad(last)}`];
   }
 
+  // ---------- Расписание с историей ----------
+  // Слот: {day, time, from?, to?} — from/to: с какой и по какую дату он действует.
+  function slotActive(slot, date) {
+    return (!slot.from || slot.from <= date) && (!slot.to || date <= slot.to);
+  }
+  // Слоты, которые действуют сейчас или начнутся позже (не закончились до date)
+  function currentSchedule(schedule, date) {
+    return (schedule || []).filter((s) => !s.to || s.to >= date);
+  }
+  // Новое расписание next действует с даты from; старые слоты закрываются накануне.
+  function mergeSchedule(old, next, from) {
+    const key = (s) => `${s.day}|${s.time}`;
+    const nextKeys = new Set(next.map(key));
+    const kept = new Set();
+    const prevDay = addDays(from, -1);
+    const out = [];
+    for (const s of old || []) {
+      if (s.to && s.to < from) { out.push(s); continue; } // уже в истории
+      if (nextKeys.has(key(s)) && !kept.has(key(s))) {
+        const k = { day: s.day, time: s.time };
+        if (s.from) k.from = s.from > from ? from : s.from;
+        out.push(k);
+        kept.add(key(s));
+      } else if (!s.from || s.from < from) {
+        out.push({ ...s, to: prevDay });
+      }
+    }
+    for (const n of next) {
+      if (kept.has(key(n))) continue;
+      kept.add(key(n));
+      out.push({ day: n.day, time: n.time, from });
+    }
+    return out;
+  }
+
   // Уроки на дату: из расписания + уже записанные в базе.
   // classes: [{id, schedule:[{day,time}], active}], lessons: строки lessons на эту дату
   // starts (необязательно): {class_id: дата начала самого раннего ученика}
@@ -43,7 +78,7 @@
       // пока в занятии нет учеников, уроков по расписанию нет
       if (starts && !(starts[c.id] && starts[c.id] <= date)) continue;
       for (const slot of c.schedule || []) {
-        if (Number(slot.day) !== wd) continue;
+        if (Number(slot.day) !== wd || !slotActive(slot, date)) continue;
         const key = `${c.id}|${slot.time}`;
         const existing = byKey.get(key);
         result.push({ class_id: c.id, date, time: slot.time, lesson: existing || null });
@@ -103,7 +138,7 @@
     return 'ok';
   }
 
-  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, teacherPaid, salaries, payStatus };
+  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);

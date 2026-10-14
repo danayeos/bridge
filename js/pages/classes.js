@@ -53,7 +53,10 @@
 
   // Поля занятия (используются и в карточке ученика)
   function classFields(c, ctx, { individual = false } = {}) {
-    const sched = c?.schedule?.length ? c.schedule : [{ day: 1, time: '16:00' }];
+    const t = Logic.today();
+    const cur = Logic.currentSchedule(c?.schedule, t);
+    const sched = cur.length ? cur : [{ day: 1, time: '16:00' }];
+    const past = (c?.schedule || []).filter((s) => s.to && s.to < t);
     return `
       <div class="field"><label>${individual ? 'Название <span class="muted small">(необязательно)</span>' : 'Название группы'}</label>
         <input name="cls_name" value="${esc(c?.name || '')}" ${individual ? 'placeholder="Например: Ясина — математика"' : 'placeholder="Например: IELTS вечер" required'}></div>
@@ -75,7 +78,12 @@
       <div class="field"><label>Расписание</label>
         <div class="sched" data-sched>${sched.map(schedRow).join('')}</div>
         <button type="button" class="btn btn-sm btn-ghost" data-add-slot>+ Добавить день</button>
-      </div>`;
+        ${past.length ? `<span class="muted small">Раньше: ${past.map((s) => `${L.days[s.day]} ${esc(s.time)}${s.from ? ' с ' + UI.fmtDate(s.from) : ''} до ${UI.fmtDate(s.to)}`).join('; ')}</span>` : ''}
+      </div>
+      ${c ? `
+      <div class="field sched-from"><label>Если поменяли расписание — с какой даты новое?</label>
+        <input type="date" name="cls_sched_from" value="${t}">
+        <span class="muted small">До этой даты уроки считаются по старому расписанию, с этой — по новому.</span></div>` : ''}`;
   }
 
   function schedRow(s) {
@@ -138,7 +146,10 @@
       ev.preventDefault();
       busy(form.querySelector('[type=submit]'), async () => {
         const row = readClass(form, { kind: c ? c.kind : 'group' });
-        if (c) row.active = form.cls_active.checked;
+        if (c) {
+          row.active = form.cls_active.checked;
+          row.schedule = Logic.mergeSchedule(c.schedule, row.schedule, form.cls_sched_from.value || Logic.today());
+        }
         c ? await DB.update('classes', c.id, row) : await DB.insert('classes', row);
         m.close(); toast('Сохранено'); done();
       });
@@ -239,5 +250,5 @@
     load();
   }
 
-  window.ClassesPage = { render, classFields, bindSchedule, readClass, bulkMark };
+  window.ClassesPage = { render, classFields, bindSchedule, readClass, bulkMark, editClass };
 })();
