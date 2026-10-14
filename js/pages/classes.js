@@ -141,6 +141,7 @@
         ${c ? `<p class="muted small">Новая ставка учителю действует для новых отметок. Старые уроки можно поправить в «Журнале».</p>` : ''}
         <div class="form-actions">
           ${c ? `<button type="button" class="btn btn-danger" data-del>Удалить</button>` : ''}
+          ${c ? `<button type="button" class="btn" data-cal>📅 Календарь</button>` : ''}
           ${c ? `<button type="button" class="btn" data-bulk>Прошлые уроки</button>` : ''}
           <button type="button" class="btn" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -150,6 +151,8 @@
     bindSchedule(form);
     $$('[name=cls_sched_mode]', form).forEach((r) => r.onchange = () =>
       $$('[data-mode-hint]', form).forEach((h) => h.hidden = h.dataset.modeHint !== r.value));
+    const cal = $('[data-cal]', m.el);
+    if (cal) cal.onclick = () => { m.close(); CalendarPage.open(c.id, done); };
     const bulk = $('[data-bulk]', m.el);
     if (bulk) bulk.onclick = () => { m.close(); bulkMark(c.id, done); };
     form.onsubmit = (ev) => {

@@ -126,7 +126,13 @@
     finally { btn.disabled = false; btn.textContent = old; }
   }
 
+  // Название статуса урока («Урока не было» — отмена без виновника)
+  function lessonStatus(l) {
+    if (l.status === 'cancelled' && !l.caused_by) return 'Не было';
+    return L.status[l.status];
+  }
+
   function empty(text) { return `<div class="empty">${esc(text)}</div>`; }
 
-  window.UI = { L, esc, $, $$, money, fmtDate, fmtShort, schedText, lessonsWord, toast, modal, confirmBox, formData, options, busy, empty };
+  window.UI = { L, esc, $, $$, money, fmtDate, fmtShort, schedText, lessonsWord, toast, modal, confirmBox, formData, options, busy, empty, lessonStatus };
 })();

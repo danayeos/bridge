@@ -83,6 +83,8 @@
     let detail = '';
     if (status === 'rescheduled') {
       detail = `На ${fmtShort(l.moved_to_date)} ${esc(l.moved_to_time || '')} · из-за: ${L.caused[l.caused_by] || '—'} · ${esc(L.reason[l.reason] || '')}${l.reason_text ? ': ' + esc(l.reason_text) : ''}`;
+    } else if (status === 'cancelled' && !l.caused_by) {
+      detail = 'Урока не было' + (l.comment ? ': ' + esc(l.comment) : '');
     } else if (status === 'cancelled') {
       detail = `Из-за: ${L.caused[l.caused_by] || '—'} · ${esc(L.reason[l.reason] || '')}${l.reason_text ? ': ' + esc(l.reason_text) : ''}`;
     } else if (status === 'planned' && l.origin_id) {
@@ -97,7 +99,7 @@
             <div class="lesson-name">${esc(c.name || 'Занятие')}</div>
             <div class="muted small">${esc(info.courseName[c.course_id] || '')} · ${L.kind[c.kind] || ''} · ${L.mode[c.mode] || ''}${info.isAdmin && c.teacher_id ? ' · ' + esc(info.teacherName[c.teacher_id] || '') : ''}</div>
           </div>
-          ${status ? `<span class="badge badge-${status}">${L.status[status]}</span>` : past ? `<span class="badge badge-warn">Не отмечен</span>` : ''}
+          ${status ? `<span class="badge badge-${status}">${UI.lessonStatus(l)}</span>` : past ? `<span class="badge badge-warn">Не отмечен</span>` : ''}
         </div>
         ${detail ? `<div class="lesson-detail">${detail}</div>` : ''}
         <div class="students-line">
@@ -119,7 +121,7 @@
     const l = slot.lesson;
     const students = Logic.rosterFor(slot.class_id, slot.date, info.roster);
     const att = l && l.attendance ? Object.fromEntries(l.attendance.map((a) => [a.enrollment_id, a.present])) : {};
-    const initial = l && l.status !== 'planned' ? l.status : 'done';
+    const initial = !l || l.status === 'planned' ? 'done' : l.status === 'cancelled' && !l.caused_by ? 'none' : l.status;
 
     const reasonBlock = (prefix) => `
       <div class="field">
@@ -141,7 +143,7 @@
     const m = modal(`${c.name || 'Урок'} · ${fmtDate(slot.date, true)} ${slot.time || ''}`, `
       <form class="form" id="mark-form">
         <div class="seg seg-big">
-          ${[['done', 'Урок прошёл'], ['rescheduled', 'Перенос'], ['cancelled', 'Отмена']].map(([v, t]) => `
+          ${[['done', 'Урок прошёл'], ['rescheduled', 'Перенос'], ['cancelled', 'Отмена'], ['none', 'Урока не было']].map(([v, t]) => `
             <label><input type="radio" name="status" value="${v}" ${initial === v ? 'checked' : ''}><span>${t}</span></label>`).join('')}
         </div>
 
@@ -172,11 +174,16 @@
           <p class="muted small">Если отменил ученик — администратор решит, сгорает урок или нет.</p>
         </div>
 
+        <div data-part="none">
+          <p class="muted small">Например, расписание тогда было другим, праздник или каникулы. Урок не считается ни ученику, ни учителю.</p>
+        </div>
+
         <div class="field">
           <label>Комментарий</label>
           <input name="comment" value="${esc(l?.comment || '')}" placeholder="Необязательно">
         </div>
         <div class="form-actions">
+          ${l && info.isAdmin ? '<button type="button" class="btn btn-danger" data-unmark>Удалить отметку</button>' : ''}
           <button type="button" class="btn" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить</button>
         </div>
@@ -190,13 +197,22 @@
     $$('[name=status]', form).forEach((r) => r.onchange = sync);
     sync();
 
+    const unmark = $('[data-unmark]', m.el);
+    if (unmark) unmark.onclick = () => busy(unmark, async () => {
+      DB.check(await DB.sb.from('lessons').delete().eq('origin_id', l.id).eq('status', 'planned'));
+      await DB.remove('lessons', l.id);
+      m.close(); toast('Отметка удалена'); done();
+    });
+
     form.onsubmit = (e) => {
       e.preventDefault();
       const btn = form.querySelector('[type=submit]');
       busy(btn, async () => {
         const f = formData(form);
         const data = { status: f.status, comment: f.comment };
-        if (f.status === 'done') {
+        if (f.status === 'none') {
+          data.status = 'cancelled';
+        } else if (f.status === 'done') {
           data.attendance = students.map((r) => ({ enrollment_id: r.enrollment_id, present: !!f['att_' + r.enrollment_id] }));
         } else {
           const p = f.status === 'rescheduled' ? 'r_' : 'c_';
@@ -224,5 +240,5 @@
     };
   }
 
-  window.TodayPage = { render, setDate: (d) => { currentDate = d; } };
+  window.TodayPage = { render, openMark, setDate: (d) => { currentDate = d; } };
 })();

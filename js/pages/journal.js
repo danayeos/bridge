@@ -42,7 +42,7 @@
             <td class="nowrap">${fmtShort(l.date)} <span class="muted">${esc(l.time)}</span></td>
             <td>${esc(c.name || '')}</td>
             <td>${esc(teacherName[l.teacher_id] || '')}</td>
-            <td><span class="badge badge-${l.status}">${L.status[l.status]}</span> ${extra}${why}</td>
+            <td><span class="badge badge-${l.status}">${UI.lessonStatus(l)}</span> ${extra}${why}</td>
             <td class="small">${(l.attendance || []).map((a) =>
               `<span class="${a.present ? 'ok-text' : 'bad-text'}">${a.present ? '✓' : '✕'} ${esc(nameByEnr[a.enrollment_id] || '')}${!a.present ? ` <span class="muted">(${a.decision ? L.decision[a.decision].toLowerCase() : 'ждёт решения'})</span>` : ''}</span>`).join('<br>')}</td>
             <td class="num ${paid ? '' : 'muted strike'}">${money(l.rate)}</td>
@@ -65,7 +65,7 @@
     const paidSel = l.teacher_paid === null ? '' : String(l.teacher_paid);
     const m = modal(`${c.name || 'Урок'} · ${fmtShort(l.date)} ${l.time}`, `
       <form class="form">
-        <p><span class="badge badge-${l.status}">${L.status[l.status]}</span>
+        <p><span class="badge badge-${l.status}">${UI.lessonStatus(l)}</span>
           ${l.caused_by ? ` · из-за: ${L.caused[l.caused_by]} · ${esc(L.reason[l.reason] || '')} ${esc(l.reason_text || '')}` : ''}</p>
         <div class="row2">
           <div class="field"><label>Учитель, который вёл</label>

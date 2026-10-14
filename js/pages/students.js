@@ -129,6 +129,7 @@
           <div class="btn-group">
             <button class="btn btn-sm btn-primary" data-pay="${e.id}">+ Оплата</button>
             <button class="btn btn-sm" data-enr-edit="${e.id}">Настройки</button>
+            <button class="btn btn-sm" data-cal="${e.class_id}">📅 Календарь</button>
             <button class="btn btn-sm" data-sched="${e.class_id}">Расписание</button>
             <button class="btn btn-sm" data-bulk="${e.class_id}">Прошлые уроки</button>
           </div>
@@ -158,6 +159,7 @@
       payModal(e, s, ctx.classById[e.class_id], reopen);
     });
     $$('[data-enr-edit]', m.el).forEach((b) => b.onclick = () => editEnrollment(ens.find((x) => x.id === b.dataset.enrEdit), s, ctx, reopen));
+    $$('[data-cal]', m.el).forEach((b) => b.onclick = () => CalendarPage.open(b.dataset.cal, onChange));
     $$('[data-sched]', m.el).forEach((b) => b.onclick = () => ClassesPage.editClass(ctx.classById[b.dataset.sched], ctx, reopen));
     $$('[data-bulk]', m.el).forEach((b) => b.onclick = () => { m.close(); ClassesPage.bulkMark(b.dataset.bulk, onChange); });
     $$('[data-del-pay]', m.el).forEach((b) => b.onclick = async () => {
