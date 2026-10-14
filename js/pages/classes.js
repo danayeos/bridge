@@ -81,9 +81,17 @@
         ${past.length ? `<span class="muted small">Раньше: ${past.map((s) => `${L.days[s.day]} ${esc(s.time)}${s.from ? ' с ' + UI.fmtDate(s.from) : ''} до ${UI.fmtDate(s.to)}`).join('; ')}</span>` : ''}
       </div>
       ${c ? `
-      <div class="field sched-from"><label>Если поменяли расписание — с какой даты новое?</label>
-        <input type="date" name="cls_sched_from" value="${t}">
-        <span class="muted small">До этой даты уроки считаются по старому расписанию, с этой — по новому.</span></div>` : ''}`;
+      <div class="field sched-from"><label>Если меняете расписание — что случилось?</label>
+        <div class="seg">
+          <label><input type="radio" name="cls_sched_mode" value="fix" checked><span>Исправляю ошибку</span></label>
+          <label><input type="radio" name="cls_sched_mode" value="change"><span>Расписание поменялось</span></label>
+        </div>
+        <span class="muted small" data-mode-hint="fix">Расписание будет считаться таким <b>с самого начала</b> (и для прошлых уроков).</span>
+        <div data-mode-hint="change" hidden>
+          <label class="small">С какой даты новое расписание?</label>
+          <input type="date" name="cls_sched_from" value="${t}">
+          <span class="muted small">До этой даты уроки считаются по старому расписанию, с этой — по новому.</span>
+        </div></div>` : ''}`;
   }
 
   function schedRow(s) {
@@ -140,6 +148,8 @@
       </form>`, { wide: true });
     const form = $('form', m.el);
     bindSchedule(form);
+    $$('[name=cls_sched_mode]', form).forEach((r) => r.onchange = () =>
+      $$('[data-mode-hint]', form).forEach((h) => h.hidden = h.dataset.modeHint !== r.value));
     const bulk = $('[data-bulk]', m.el);
     if (bulk) bulk.onclick = () => { m.close(); bulkMark(c.id, done); };
     form.onsubmit = (ev) => {
@@ -148,7 +158,10 @@
         const row = readClass(form, { kind: c ? c.kind : 'group' });
         if (c) {
           row.active = form.cls_active.checked;
-          row.schedule = Logic.mergeSchedule(c.schedule, row.schedule, form.cls_sched_from.value || Logic.today());
+          // «исправляю ошибку» — новое расписание действует всегда; «поменялось» — с выбранной даты
+          if (form.querySelector('[name=cls_sched_mode]:checked').value === 'change') {
+            row.schedule = Logic.mergeSchedule(c.schedule, row.schedule, form.cls_sched_from.value || Logic.today());
+          }
         }
         c ? await DB.update('classes', c.id, row) : await DB.insert('classes', row);
         m.close(); toast('Сохранено'); done();
