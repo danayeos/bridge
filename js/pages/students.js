@@ -60,7 +60,7 @@
   function statusBadge(e, ctx) {
     const r = ctx.remaining(e);
     const st = ctx.status(e);
-    if (st === 'support') return `<span class="badge badge-support">Сопровождение · ${r} ур.</span>`;
+    if (st === 'support') return `<span class="badge badge-support">Сопровождение · прошло ${ctx.stat(e).used_lessons} ур.</span>`;
     if (st === 'debt') return `<span class="badge badge-debt">Долг ${-r} ${lessonsWord(-r)}</span>`;
     // прогресс внутри текущего пакета: «прошло 5 из 8»
     const pkg = e.package_lessons;
@@ -121,11 +121,17 @@
             </div>
             ${statusBadge(e, ctx)}
           </div>
+          ${e.plan === 'support' ? `
+          <div class="enr-nums">
+            <div><span>Прошло уроков</span><b>${st.used_lessons}</b></div>
+            <div><span>Оплачено всего</span><b>${money(ePays.reduce((x, p) => x + p.amount, 0))}</b></div>
+            <div><span>Оплата</span><b>не нужна</b></div>
+          </div>` : `
           <div class="enr-nums">
             <div><span>Оплачено уроков</span><b>${st.paid_lessons}</b></div>
             <div><span>Прошло</span><b>${st.used_lessons}</b></div>
             <div><span>Осталось</span><b>${st.remaining}</b></div>
-          </div>
+          </div>`}
           ${e.plan === 'support' || !e.active ? '' : (() => {
             if (st.remaining < 0) return `<div class="pay-hint bad">Уроки идут без оплаты: долг ${-st.remaining} ${lessonsWord(-st.remaining)}. Когда оплатит — нажмите «+ Оплата», долг вычтется из нового пакета.</div>`;
             if (st.remaining === 0) return `<div class="pay-hint warn">Оплаченные уроки закончились — пора оплатить следующий пакет.</div>`;
@@ -311,10 +317,12 @@
         <p><b>${esc(s?.full_name || '')}</b> · ${esc(c?.name || '')}</p>
         <div class="row2">
           <div class="field"><label>Дата оплаты</label><input type="date" name="paid_at" value="${Logic.today()}" required></div>
-          <div class="field"><label>Сумма, ₸</label><input type="number" name="amount" min="0" step="1000" value="${e.package_price || ''}" required></div>
+          <div class="field"><label>Сумма, ₸</label><input type="number" name="amount" min="0" step="1000" value="${e.plan === 'support' ? '' : e.package_price || ''}" required></div>
         </div>
-        <div class="field"><label>Сколько уроков оплачено</label>
-          <input type="number" name="lessons" min="0" value="${e.package_lessons}" required>
+        ${e.plan === 'support' ? `
+        <p class="muted small">Сопровождение: уроки не считаются, оплата просто сохранится для отчёта «Деньги».</p>` : ''}
+        <div class="field" ${e.plan === 'support' ? 'hidden' : ''}><label>Сколько уроков оплачено</label>
+          <input type="number" name="lessons" min="0" value="${e.plan === 'support' ? 0 : e.package_lessons}" required>
           <div class="quick">
             ${[[1, '1 пакет'], [3, '3 мес.'], [6, '6 мес.'], [24, '2 года']].map(([k, t]) =>
               `<button type="button" class="chip" data-mult="${k}">${t}</button>`).join('')}
