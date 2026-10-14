@@ -38,7 +38,7 @@
       <div class="list" id="st-list"></div>`;
     $('#st-q', root).oninput = (e) => { filter.q = e.target.value; draw(); };
     $('#st-status', root).onchange = (e) => { filter.status = e.target.value; draw(); };
-    $('#add-st', root).onclick = () => editStudent(null, (s) => openStudent(s.id, () => render(root)));
+    $('#add-st', root).onclick = () => editStudent(null, (s) => openStudent(s.id, () => render(root), { addCourse: true }));
     draw();
   }
 
@@ -78,13 +78,13 @@
           ${ens.length ? ens.map((e) => {
             const c = ctx.classById[e.class_id] || {};
             return `<span class="enr-chip"><span>${esc(ctx.courseName[c.course_id] || '')}</span> ${statusBadge(e, ctx)}</span>`;
-          }).join('') : '<span class="muted small">Нет курсов</span>'}
+          }).join('') : '<span class="badge badge-due">Нет курса — нажмите, чтобы добавить</span>'}
         </div>
       </button>`;
   }
 
   // ---------- карточка ученика ----------
-  async function openStudent(id, onChange) {
+  async function openStudent(id, onChange, opts = {}) {
     const [students, enrollments, classes, courses, teachers, stats] = await Promise.all([
       DB.students(), DB.enrollments(), DB.classes(), DB.courses(), DB.teachers(), DB.stats(),
     ]);
@@ -162,6 +162,8 @@
       if (!(await confirmBox('Удалить эту оплату?'))) return;
       await busy(b, async () => { await DB.remove('payments', b.dataset.delPay); toast('Оплата удалена'); reopen(); });
     });
+    // новый ученик — сразу предлагаем добавить курс
+    if (opts.addCourse) editEnrollment(null, s, ctx, reopen);
   }
 
   function editStudent(s, done) {
