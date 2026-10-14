@@ -29,7 +29,8 @@
 
   // Уроки на дату: из расписания + уже записанные в базе.
   // classes: [{id, schedule:[{day,time}], active}], lessons: строки lessons на эту дату
-  function lessonsForDate(date, classes, lessons) {
+  // starts (необязательно): {class_id: дата начала самого раннего ученика}
+  function lessonsForDate(date, classes, lessons, starts) {
     const wd = weekday(date);
     const byKey = new Map();
     const result = [];
@@ -39,8 +40,8 @@
     }
     for (const c of classes) {
       if (!c.active) continue;
-      // до создания занятия уроков по расписанию не было
-      if (c.created_at && date < c.created_at.slice(0, 10)) continue;
+      // пока в занятии нет учеников, уроков по расписанию нет
+      if (starts && !(starts[c.id] && starts[c.id] <= date)) continue;
       for (const slot of c.schedule || []) {
         if (Number(slot.day) !== wd) continue;
         const key = `${c.id}|${slot.time}`;
@@ -63,6 +64,15 @@
   // Ученики, которые должны быть на уроке в эту дату
   function rosterFor(classId, date, roster) {
     return roster.filter((r) => r.class_id === classId && r.active && r.start_date <= date);
+  }
+
+  // Дата начала каждого занятия = самый ранний start_date его учеников
+  function classStarts(roster) {
+    const out = {};
+    for (const r of roster) {
+      if (!out[r.class_id] || r.start_date < out[r.class_id]) out[r.class_id] = r.start_date;
+    }
+    return out;
   }
 
   // Оплачивается ли урок учителю
@@ -93,7 +103,7 @@
     return 'ok';
   }
 
-  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, teacherPaid, salaries, payStatus };
+  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);

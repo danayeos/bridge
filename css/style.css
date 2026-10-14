@@ -128,6 +128,15 @@ input[type=checkbox], input[type=radio] { width: auto; min-height: 0; accent-col
 .att-item input:checked + .att-box { border-color: var(--ok); background: var(--ok); color: #fff; }
 .att-item input:checked + .att-box::after { content: '✓'; }
 
+/* прошлые уроки разом */
+.bulk-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; margin-top: 8px; }
+.bulk-row {
+  display: grid; grid-template-columns: 22px 110px minmax(120px, 1fr) 2fr; gap: 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+}
+.bulk-row:has(input:checked) { background: var(--ok-soft); border-color: #c4e4cf; }
+@media (max-width: 860px) { .bulk-row { grid-template-columns: 22px 1fr; } .bulk-row > span:nth-child(n+3) { grid-column: 2; } }
+
 /* расписание */
 .sched { display: flex; flex-direction: column; gap: 6px; }
 .sched-row { display: grid; grid-template-columns: 1fr 120px 34px; gap: 6px; align-items: center; }

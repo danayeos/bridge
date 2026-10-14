@@ -74,6 +74,7 @@
     const id = (location.hash.match(/^#\/(\w+)/) || [])[1];
     const item = nav().find((n) => n[0] === id) || nav()[0];
     $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === item[0]));
+    $$('.modal-wrap').forEach((w) => w.remove()); // при переходе закрываем открытые окна
     const page = $('#page');
     try {
       await item[3](page, app);

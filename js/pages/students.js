@@ -129,6 +129,7 @@
           <div class="btn-group">
             <button class="btn btn-sm btn-primary" data-pay="${e.id}">+ Оплата</button>
             <button class="btn btn-sm" data-enr-edit="${e.id}">Настройки</button>
+            <button class="btn btn-sm" data-bulk="${e.class_id}">Прошлые уроки</button>
           </div>
           <details>
             <summary>Оплаты (${ePays.length})</summary>
@@ -156,6 +157,7 @@
       payModal(e, s, ctx.classById[e.class_id], reopen);
     });
     $$('[data-enr-edit]', m.el).forEach((b) => b.onclick = () => editEnrollment(ens.find((x) => x.id === b.dataset.enrEdit), s, ctx, reopen));
+    $$('[data-bulk]', m.el).forEach((b) => b.onclick = () => { m.close(); ClassesPage.bulkMark(b.dataset.bulk, onChange); });
     $$('[data-del-pay]', m.el).forEach((b) => b.onclick = async () => {
       if (!(await confirmBox('Удалить эту оплату?'))) return;
       await busy(b, async () => { await DB.remove('payments', b.dataset.delPay); toast('Оплата удалена'); reopen(); });

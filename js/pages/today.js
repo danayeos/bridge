@@ -19,12 +19,13 @@
       DB.lessons(Logic.addDays(t, -14), Logic.addDays(t, -1)),
     ]);
     const classIds = new Set(myClasses.map((c) => c.id));
-    const slots = Logic.lessonsForDate(currentDate, myClasses, dayLessons.filter((l) => classIds.has(l.class_id)));
+    const starts = Logic.classStarts(roster);
+    const slots = Logic.lessonsForDate(currentDate, myClasses, dayLessons.filter((l) => classIds.has(l.class_id)), starts);
 
     // неотмеченные уроки за 2 недели
     const unmarked = [];
     for (let d = Logic.addDays(t, -14); d < t; d = Logic.addDays(d, 1)) {
-      for (const s of Logic.lessonsForDate(d, myClasses, recent.filter((l) => l.date === d && classIds.has(l.class_id)))) {
+      for (const s of Logic.lessonsForDate(d, myClasses, recent.filter((l) => l.date === d && classIds.has(l.class_id)), starts)) {
         if (!s.lesson || s.lesson.status === 'planned') unmarked.push(s);
       }
     }
