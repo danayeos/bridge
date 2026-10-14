@@ -101,6 +101,20 @@
     return roster.filter((r) => r.class_id === classId && r.active && r.start_date <= date);
   }
 
+  // До какой даты хватит оплаченных уроков: дата последнего оплаченного урока по расписанию.
+  // remaining — сколько уроков осталось; считаем уроки начиная с даты from (включительно).
+  function paidUntil(cls, remaining, from) {
+    if (remaining <= 0 || !cls || !currentSchedule(cls.schedule, from).length) return null;
+    let left = remaining;
+    for (let d = from, i = 0; i < 400; d = addDays(d, 1), i++) {
+      const wd = weekday(d);
+      for (const s of cls.schedule || []) {
+        if (Number(s.day) === wd && slotActive(s, d)) { left -= 1; if (left === 0) return d; }
+      }
+    }
+    return null;
+  }
+
   // Дата начала каждого занятия = самый ранний start_date его учеников
   function classStarts(roster) {
     const out = {};
@@ -138,7 +152,7 @@
     return 'ok';
   }
 
-  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, teacherPaid, salaries, payStatus };
+  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -126,6 +126,12 @@
             <div><span>Прошло</span><b>${st.used_lessons}</b></div>
             <div><span>Осталось</span><b>${st.remaining}</b></div>
           </div>
+          ${e.plan === 'support' || !e.active ? '' : (() => {
+            if (st.remaining < 0) return `<div class="pay-hint bad">Уроки идут без оплаты: долг ${-st.remaining} ${lessonsWord(-st.remaining)}. Когда оплатит — нажмите «+ Оплата», долг вычтется из нового пакета.</div>`;
+            if (st.remaining === 0) return `<div class="pay-hint warn">Оплаченные уроки закончились — пора оплатить следующий пакет.</div>`;
+            const until = Logic.paidUntil(c, st.remaining, Logic.today());
+            return `<div class="pay-hint">${until ? `По расписанию оплаченных уроков хватит примерно до <b>${fmtDate(until, true)}</b> — это последний оплаченный урок.` : `Осталось ${st.remaining} ${lessonsWord(st.remaining)}.`}</div>`;
+          })()}
           <div class="btn-group">
             <button class="btn btn-sm btn-primary" data-pay="${e.id}">+ Оплата</button>
             <button class="btn btn-sm" data-enr-edit="${e.id}">Настройки</button>

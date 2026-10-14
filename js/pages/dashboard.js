@@ -64,6 +64,7 @@
             ${who(r.e)}
             <div class="row-meta">
               <span class="badge badge-due">${r.st.remaining === 0 ? 'Уроки закончились' : `Остался ${r.st.remaining} ${lessonsWord(r.st.remaining)}`}</span>
+              ${(() => { const u = r.st.remaining > 0 && Logic.paidUntil(classById[r.e.class_id], r.st.remaining, t); return u ? `<span class="small">последний оплаченный урок: <b>${fmtShort(u)}</b></span>` : ''; })()}
               <span class="muted small">${money(r.e.package_price)} / ${r.e.package_lessons} ур.${r.st.last_payment ? ' · посл. оплата ' + fmtDate(r.st.last_payment) : ''}</span>
             </div>
             <button class="btn btn-primary btn-sm" data-pay="${r.e.id}">Оплатил</button>
