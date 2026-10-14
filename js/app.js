@@ -19,11 +19,19 @@
 
   async function start() {
     if (!DB.configured) return renderSetup();
+    window.addEventListener('hashchange', route);
+    // пришли по ссылке «сбросить пароль» из письма
+    let recovery = /type=recovery/.test(location.hash);
     DB.sb.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') { app = null; renderLogin(); }
+      if (event === 'PASSWORD_RECOVERY' && !recovery) { recovery = true; setTimeout(renderNewPassword); }
     });
+    if (recovery) {
+      await DB.session(); // дождаться, пока Supabase прочитает ссылку
+      history.replaceState(null, '', location.pathname);
+      return renderNewPassword();
+    }
     await boot();
-    window.addEventListener('hashchange', route);
   }
 
   async function boot() {
@@ -108,6 +116,10 @@
       </form>
       <button class="btn btn-ghost btn-block" id="switch">${mode === 'in' ? 'Нет аккаунта? Создать' : 'Уже есть аккаунт? Войти'}</button>`);
     $('#switch').onclick = () => renderLogin(null, mode === 'in' ? 'up' : 'in');
+    if (mode === 'in') {
+      $('#auth-form').insertAdjacentHTML('afterend', `<button class="btn btn-ghost btn-block" id="forgot">Забыли пароль?</button>`);
+      $('#forgot').onclick = renderForgot;
+    }
     const form = $('#auth-form');
     form.onsubmit = (e) => {
       e.preventDefault();
@@ -123,6 +135,48 @@
             return;
           }
         }
+        await boot();
+      });
+    };
+  }
+
+  function renderForgot() {
+    authLayout(`
+      <p class="muted center">Восстановление пароля</p>
+      <form class="form" id="f-form">
+        <div class="field"><label>Email, с которым вы регистрировались</label><input type="email" name="email" required autocomplete="email"></div>
+        <button class="btn btn-primary btn-block" type="submit">Прислать ссылку</button>
+      </form>
+      <button class="btn btn-ghost btn-block" id="back">Назад ко входу</button>`);
+    $('#back').onclick = () => renderLogin();
+    const form = $('#f-form');
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      busy(form.querySelector('[type=submit]'), async () => {
+        const { email } = formData(form);
+        DB.check(await DB.sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }));
+        authLayout(`<div class="alert">Мы отправили письмо на <b>${esc(email)}</b>. Откройте ссылку из письма — там можно задать новый пароль.
+          Если письма нет, проверьте папку «Спам».</div>
+          <button class="btn btn-ghost btn-block" id="back">Назад ко входу</button>`);
+        $('#back').onclick = () => renderLogin();
+      });
+    };
+  }
+
+  function renderNewPassword() {
+    authLayout(`
+      <p class="muted center">Придумайте новый пароль</p>
+      <form class="form" id="np-form">
+        <div class="field"><label>Новый пароль</label><input type="password" name="password" required minlength="6" autocomplete="new-password"></div>
+        <button class="btn btn-primary btn-block" type="submit">Сохранить и войти</button>
+      </form>`);
+    const form = $('#np-form');
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      busy(form.querySelector('[type=submit]'), async () => {
+        const { password } = formData(form);
+        DB.check(await DB.sb.auth.updateUser({ password }));
+        toast('Пароль изменён');
         await boot();
       });
     };
