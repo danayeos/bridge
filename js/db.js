@@ -16,6 +16,7 @@
     if (/duplicate key/i.test(msg)) return 'Такая запись уже есть';
     if (/row-level security/i.test(msg)) return 'Нет доступа';
     if (/school_schedule|school_lessons|is_staff|duration/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-2-school-schedule.sql в Supabase → SQL Editor';
+    if (/pay_with|account_id/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-3-shared-payment.sql в Supabase → SQL Editor';
     if (/rate_history/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-1-rate-history.sql в Supabase → SQL Editor';
     return msg;
   }

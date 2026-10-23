@@ -464,3 +464,9 @@ details .table { margin-top: 6px; }
   .seg label { min-width: 90px; }
   .seg-big span { padding: 10px 6px; font-size: 14px; }
 }
+
+/* общая оплата за несколько курсов, добавление ученика в группу */
+.shared-note { margin-top: 4px; font-size: 13px; color: var(--brand); font-weight: 600; }
+.add-st-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--brand-soft); }
+.pick-list { width: 100%; min-height: 180px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.pick-list option { padding: 6px 8px; border-radius: 6px; }

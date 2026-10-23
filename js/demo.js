@@ -35,7 +35,7 @@ if (/[?&]demo/.test(location.search)) {
     const e2 = e(s[1], c2, { package_lessons: 12, package_price: 60000 });
     const e3 = e(s[2], c2, { package_lessons: 12, package_price: 60000, initial_lessons: 5 });
     e(s[3], c3, { plan: 'support', package_price: 0 });
-    e(s[1], c3, { package_price: 90000 });
+    e(s[1], c3, { package_price: 0, pay_with: e2.id }); // общая оплата с IELTS
     T.payments.push({ id: uid(), enrollment_id: e1.id, paid_at: addDays(today, -30), amount: 80000, lessons: 8, note: null });
     T.payments.push({ id: uid(), enrollment_id: e2.id, paid_at: addDays(today, -3), amount: 60000, lessons: 12, note: null });
     for (let i = 0; i < 7; i++) {
@@ -48,11 +48,14 @@ if (/[?&]demo/.test(location.search)) {
     // ---------- query builder ----------
     const views = {
       enrollment_stats: () => T.enrollments.map((en) => {
-        const ps = T.payments.filter((p) => p.enrollment_id === en.id);
-        const used = T.attendance.filter((a) => a.enrollment_id === en.id && (a.present || a.decision === 'burned') &&
+        // общая оплата: курсы с одним «счётом» считаются вместе
+        const acc = (x) => x.pay_with || x.id;
+        const group = T.enrollments.filter((x) => acc(x) === acc(en)).map((x) => x.id);
+        const ps = T.payments.filter((p) => group.includes(p.enrollment_id));
+        const used = T.attendance.filter((a) => group.includes(a.enrollment_id) && (a.present || a.decision === 'burned') &&
           ['done', 'cancelled'].includes(T.lessons.find((l) => l.id === a.lesson_id)?.status)).length;
-        const paid = en.initial_lessons + ps.reduce((x, p) => x + p.lessons, 0);
-        return { enrollment_id: en.id, paid_lessons: paid, used_lessons: used, remaining: paid - used, last_payment: ps.map((p) => p.paid_at).sort().pop() || null };
+        const paid = T.enrollments.filter((x) => group.includes(x.id)).reduce((n, x) => n + x.initial_lessons, 0) + ps.reduce((x, p) => x + p.lessons, 0);
+        return { enrollment_id: en.id, paid_lessons: paid, used_lessons: used, remaining: paid - used, last_payment: ps.map((p) => p.paid_at).sort().pop() || null, account_id: acc(en) };
       }),
     };
     const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -89,7 +92,7 @@ if (/[?&]demo/.test(location.search)) {
             data = [];
             for (const r of rows) {
               if (table !== 'attendance' && !r.id) r.id = uid();
-              const defaults = { lessons: { origin_id: null, fine: 0, teacher_paid: null, reviewed: false, rate: 0 }, enrollments: { active: true, plan: 'package' }, students: { active: true }, classes: { active: true, schedule: [] }, teachers: { active: true, user_id: null }, attendance: { decision: null } }[table] || {};
+              const defaults = { lessons: { origin_id: null, fine: 0, teacher_paid: null, reviewed: false, rate: 0 }, enrollments: { active: true, plan: 'package', pay_with: null }, students: { active: true }, classes: { active: true, schedule: [] }, teachers: { active: true, user_id: null }, attendance: { decision: null } }[table] || {};
               const row = { ...defaults, ...r };
               if (table === 'attendance') {
                 const ex = T.attendance.find((a) => a.lesson_id === row.lesson_id && a.enrollment_id === row.enrollment_id);
@@ -112,7 +115,7 @@ if (/[?&]demo/.test(location.search)) {
             T[table] = T[table].filter((r) => !match(r));
             if (table === 'lessons') { const ids = new Set(del.map((d) => d.id)); T.attendance = T.attendance.filter((a) => !ids.has(a.lesson_id)); T.lessons.forEach((l) => { if (ids.has(l.origin_id)) l.origin_id = null; }); }
             if (table === 'students') { const ids = new Set(del.map((d) => d.id)); T.enrollments = T.enrollments.filter((x) => !ids.has(x.student_id)); }
-            if (table === 'enrollments' || table === 'students') { const ids = new Set(T.enrollments.map((x) => x.id)); T.payments = T.payments.filter((p) => ids.has(p.enrollment_id)); T.attendance = T.attendance.filter((a) => ids.has(a.enrollment_id)); }
+            if (table === 'enrollments' || table === 'students') { const ids = new Set(T.enrollments.map((x) => x.id)); T.payments = T.payments.filter((p) => ids.has(p.enrollment_id)); T.attendance = T.attendance.filter((a) => ids.has(a.enrollment_id)); T.enrollments.forEach((x) => { if (x.pay_with && !ids.has(x.pay_with)) x.pay_with = null; }); }
             if (table === 'classes') { const ids = new Set(del.map((d) => d.id)); T.enrollments = T.enrollments.filter((x) => !ids.has(x.class_id)); T.lessons = T.lessons.filter((x) => !ids.has(x.class_id)); }
             window.__T = T;
             data = null;

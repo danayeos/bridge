@@ -176,6 +176,8 @@
   function editClass(c, ctx, done) {
     const m = modal(c ? c.name : 'Новая группа', `
       <form class="form">
+        ${c && c.kind === 'group' ? `<div class="add-st-bar"><button type="button" class="btn btn-primary btn-sm" data-add-st>+ Добавить ученика в группу</button>
+          <span class="muted small">можно выбрать того, кто уже учится в другой группе</span></div>` : ''}
         ${classFields(c, ctx, { individual: c?.kind === 'individual' })}
         ${c ? `<label class="check"><input type="checkbox" name="cls_active" ${c.active ? 'checked' : ''}> Занятие идёт (снимите, чтобы убрать в архив)</label>` : ''}
         ${c ? `<p class="muted small">Новая ставка учителю действует для новых отметок. Старые уроки можно поправить в «Журнале».</p>` : ''}
@@ -199,6 +201,8 @@
       $$('[name=cls_rate_mode]', form).forEach((r) => r.onchange = () =>
         $$('[data-rate-hint]', form).forEach((h) => h.hidden = h.dataset.rateHint !== r.value));
     }
+    const addSt = $('[data-add-st]', m.el);
+    if (addSt) addSt.onclick = () => { m.close(); StudentsPage.addToClass(c.id, done); };
     const matrix = $('[data-matrix]', m.el);
     if (matrix) matrix.onclick = () => { m.close(); GroupsPage.openMatrix(c.id, true); };
     const cal = $('[data-cal]', m.el);
