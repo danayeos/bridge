@@ -37,7 +37,7 @@
 
     root.innerHTML = `
       <div class="page-head">
-        <h1>${isAdmin ? 'Расписание' : 'Мои уроки'}</h1>
+        <h1>${isAdmin ? 'Уроки дня' : 'Мои уроки'}</h1>
         ${isAdmin ? `<select id="t-filter" class="input-sm">${options(teachers.map((x) => [x.id, x.full_name]), teacherFilter, { empty: 'Все учителя' })}</select>` : ''}
       </div>
       ${unmarked.length ? `

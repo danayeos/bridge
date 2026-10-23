@@ -86,6 +86,9 @@
         <div class="field"><label>Учителю за 1 урок, ₸</label>
           <input type="number" name="cls_rate" min="0" step="500" value="${c?.teacher_rate ?? ''}" placeholder="5000"></div>
       </div>
+      <div class="field"><label>Длительность урока, мин</label>
+        <input type="number" name="cls_duration" min="15" step="15" value="${c?.duration ?? 60}" list="durations" style="max-width:160px">
+        <datalist id="durations"><option value="45"><option value="60"><option value="90"><option value="120"></datalist></div>
       ${c && (c.rate_history || []).length ? `<div class="muted small">История ставок: ${rateHistoryText(c.rate_history)}</div>` : ''}
       ${c ? `
       <div class="field sched-from" data-rate-when hidden><label>Ставка изменилась — что случилось?</label>
@@ -164,6 +167,7 @@
       teacher_id: f.cls_teacher || null,
       mode: f.cls_mode || 'offline',
       teacher_rate: f.cls_rate || 0,
+      ...(DB.features.duration ? { duration: f.cls_duration || 60 } : {}),
       schedule,
       kind,
     };
@@ -178,6 +182,7 @@
         <div class="form-actions">
           ${c ? `<button type="button" class="btn btn-danger" data-del>Удалить</button>` : ''}
           ${c ? `<button type="button" class="btn" data-cal>📅 Календарь</button>` : ''}
+          ${c ? `<button type="button" class="btn" data-matrix>📊 Посещаемость</button>` : ''}
           ${c ? `<button type="button" class="btn" data-bulk>Прошлые уроки</button>` : ''}
           <button type="button" class="btn" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -194,6 +199,8 @@
       $$('[name=cls_rate_mode]', form).forEach((r) => r.onchange = () =>
         $$('[data-rate-hint]', form).forEach((h) => h.hidden = h.dataset.rateHint !== r.value));
     }
+    const matrix = $('[data-matrix]', m.el);
+    if (matrix) matrix.onclick = () => { m.close(); GroupsPage.openMatrix(c.id, true); };
     const cal = $('[data-cal]', m.el);
     if (cal) cal.onclick = () => { m.close(); CalendarPage.open(c.id, done); };
     const bulk = $('[data-bulk]', m.el);

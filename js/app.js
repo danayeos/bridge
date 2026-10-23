@@ -4,7 +4,8 @@
 
   const ADMIN_NAV = [
     ['dashboard', 'Главная', '🏠', (r) => DashboardPage.render(r)],
-    ['today', 'Расписание', '🗓', (r, a) => TodayPage.render(r, a)],
+    ['today', 'Уроки дня', '✅', (r, a) => TodayPage.render(r, a)],
+    ['week', 'Расписание', '🗓', (r, a) => WeekPage.render(r, a)],
     ['students', 'Ученики', '🎓', (r) => StudentsPage.render(r)],
     ['classes', 'Группы', '👥', (r) => ClassesPage.render(r)],
     ['teachers', 'Учителя', '🧑‍🏫', (r, a) => TeachersPage.render(r, a)],
@@ -12,7 +13,9 @@
     ['reports', 'Деньги', '💰', (r) => ReportsPage.render(r)],
   ];
   const TEACHER_NAV = [
-    ['today', 'Мои уроки', '🗓', (r, a) => TodayPage.render(r, a)],
+    ['today', 'Мои уроки', '✅', (r, a) => TodayPage.render(r, a)],
+    ['week', 'Расписание', '🗓', (r, a) => WeekPage.render(r, a)],
+    ['groups', 'Группы', '👥', (r, a) => GroupsPage.render(r, a)],
   ];
 
   let app = null; // { user, profile, teacher, role }

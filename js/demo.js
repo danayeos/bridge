@@ -27,6 +27,7 @@ if (/[?&]demo/.test(location.search)) {
     const c2 = { id: uid(), name: 'IELTS вечер', course_id: 2, teacher_id: t1.id, kind: 'group', mode: 'online', teacher_rate: 5000, schedule: [{ day: wd(today), time: '18:00' }], active: true };
     const c3 = { id: uid(), name: 'SAT утро', course_id: 1, teacher_id: t2.id, kind: 'group', mode: 'offline', teacher_rate: 6000, schedule: [{ day: wd(addDays(today, -1)), time: '10:00' }], active: true };
     T.classes.push(c1, c2, c3);
+    T.classes.forEach((c) => { c.duration = c.kind === 'group' ? 90 : 60; c.rate_history = []; });
     const s = ['Ясина', 'Алихан Нуров', 'Мадина Ким', 'Тимур Абаев'].map((full_name) => ({ id: uid(), full_name, note: null, active: true }));
     T.students.push(...s);
     const e = (st, c, extra = {}) => { const r = { id: uid(), student_id: st.id, class_id: c.id, plan: 'package', package_lessons: 8, package_price: 80000, start_date: addDays(today, -60), initial_lessons: 0, active: true, ...extra }; T.enrollments.push(r); return r; };
@@ -150,6 +151,17 @@ if (/[?&]demo/.test(location.search)) {
         return {
           from,
           async rpc(name) {
+            if (name === 'school_schedule') {
+              return { data: T.classes.map((c) => ({ id: c.id, name: c.name, course_id: c.course_id, teacher_id: c.teacher_id,
+                teacher_name: T.teachers.find((t) => t.id === c.teacher_id)?.full_name || null, kind: c.kind, mode: c.mode,
+                schedule: c.schedule, duration: c.duration || 60, active: c.active,
+                start_date: T.enrollments.filter((e) => e.class_id === c.id).map((e) => e.start_date).sort()[0] || null,
+                students: T.enrollments.filter((e) => e.class_id === c.id && e.active).length })), error: null };
+            }
+            if (name === 'school_lessons') {
+              return { data: T.lessons.filter((l) => l.date >= arguments[1].d1 && l.date <= arguments[1].d2)
+                .map(({ id, class_id, date, time, status, origin_id, moved_to_date, moved_to_time }) => ({ id, class_id, date, time, status, origin_id, moved_to_date, moved_to_time })), error: null };
+            }
             if (name !== 'class_roster') throw new Error('rpc');
             const myT = T.teachers.find((t) => t.user_id === me.id);
             const rows = T.enrollments.filter((en) => ROLE === 'admin' || T.classes.find((c) => c.id === en.class_id)?.teacher_id === myT?.id)

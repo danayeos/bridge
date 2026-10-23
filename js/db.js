@@ -15,6 +15,7 @@
     if (/Email not confirmed/i.test(msg)) return 'Email не подтверждён — проверьте почту';
     if (/duplicate key/i.test(msg)) return 'Такая запись уже есть';
     if (/row-level security/i.test(msg)) return 'Нет доступа';
+    if (/school_schedule|school_lessons|is_staff|duration/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-2-school-schedule.sql в Supabase → SQL Editor';
     if (/rate_history/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-1-rate-history.sql в Supabase → SQL Editor';
     return msg;
   }
@@ -55,7 +56,16 @@
     courses: () => all(() => sb.from('courses').select('*').order('id')),
     teachers: () => all(() => sb.from('teachers').select('*').order('full_name')),
     profiles: () => all(() => sb.from('profiles').select('*').order('created_at')),
-    classes: () => all(() => sb.from('classes').select('*').order('name')),
+    // features.duration — есть ли в базе колонка «длительность» (после update-2)
+    features: { duration: true },
+    async classes() {
+      const rows = await all(() => sb.from('classes').select('*').order('name'));
+      if (rows.length) DB.features.duration = 'duration' in rows[0];
+      return rows;
+    },
+    // общее расписание школы (для учителей — без цен)
+    schoolSchedule: async () => check(await sb.rpc('school_schedule')),
+    schoolLessons: async (d1, d2) => check(await sb.rpc('school_lessons', { d1, d2 })),
     students: () => all(() => sb.from('students').select('*').order('full_name')),
     enrollments: () => all(() => sb.from('enrollments').select('*').order('created_at')),
     stats: () => all(() => sb.from('enrollment_stats').select('*')),

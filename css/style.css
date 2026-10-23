@@ -137,6 +137,58 @@ input[type=checkbox], input[type=radio] { width: auto; min-height: 0; accent-col
 .bulk-row:has(input:checked) { background: var(--ok-soft); border-color: #c4e4cf; }
 @media (max-width: 860px) { .bulk-row { grid-template-columns: 22px 1fr; } .bulk-row > span:nth-child(n+3) { grid-column: 2; } }
 
+/* расписание школы (неделя) */
+.zoom-box { padding: 12px 16px; border-radius: var(--radius); margin-bottom: 14px; display: flex; flex-direction: column; gap: 4px; border: 1px solid; }
+.zoom-box.free { background: var(--ok-soft); border-color: #c4e4cf; }
+.zoom-box.busy { background: var(--info-soft); border-color: #cbd7ef; }
+.seg-inline label { flex: 0 0 auto; min-width: 0; }
+.seg-inline span { padding: 7px 12px; font-size: 14px; }
+.wk-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.wk-day { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.wk-today { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.wk-head { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; }
+.wk-head span { color: var(--muted); font-weight: 500; }
+.wk-empty { color: var(--muted); text-align: center; font-size: 13px; padding: 6px 0; }
+.wk-item { border-radius: 8px; padding: 6px 8px; font-size: 12.5px; border: 1px solid var(--line); border-left-width: 4px; }
+.wk-online { background: var(--info-soft); border-left-color: var(--info); }
+.wk-offline { background: var(--brand-soft); border-left-color: var(--brand); }
+.wk-mine { box-shadow: 0 0 0 2px var(--brand) inset; }
+.wk-off { opacity: .5; }
+.wk-off .wk-name { text-decoration: line-through; }
+.wk-clash { border-color: var(--bad); background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(179, 38, 30, .06) 6px 12px); }
+.wk-now { outline: 2px solid var(--ok); }
+.wk-time { font-weight: 700; font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; gap: 4px; flex-wrap: wrap; }
+.wk-mode { font-weight: 500; color: var(--muted); }
+.wk-name { font-weight: 600; margin-top: 2px; word-break: break-word; }
+.wk-meta { color: var(--muted); }
+.wk-note { color: var(--warn); font-weight: 500; }
+.wk-warn { color: var(--bad); font-weight: 600; }
+.wk-live { color: var(--ok); font-weight: 700; }
+.wk-legend { display: inline-block; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); border-left-width: 4px; font-size: 12px; margin-left: 4px; }
+.wk-legend.wk-mine { box-shadow: 0 0 0 2px var(--brand) inset; }
+@media (max-width: 1100px) { .wk-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .wk-grid { grid-template-columns: 1fr; } .wk-day.wk-empty-day:not(.wk-today) { display: none; } }
+
+/* таблица посещаемости */
+.modal-xwide { max-width: 1100px; }
+.mx-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.mx { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.mx th, .mx td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: center; padding: 6px 4px; min-width: 38px; }
+.mx th { background: var(--bg); font-weight: 600; font-size: 11.5px; }
+.mx .mx-name { position: sticky; left: 0; background: var(--surface); text-align: left; min-width: 150px; padding: 6px 10px; z-index: 1; font-weight: 500; }
+.mx th.mx-name { background: var(--bg); }
+.mx-day { border: 0; background: none; font: inherit; cursor: pointer; color: inherit; padding: 2px; border-radius: 6px; line-height: 1.25; }
+.mx-day:hover { background: var(--brand-soft); color: var(--brand); }
+.mx-today { color: var(--brand); font-weight: 700; }
+.mx-yes { background: var(--ok-soft); color: var(--ok); font-weight: 700; }
+.mx-no { background: var(--bad-soft); color: var(--bad); font-weight: 700; }
+.mx-moved { color: var(--info); }
+.mx-cancel { color: var(--bad); font-size: 11px; }
+.mx-none { color: var(--muted); }
+.mx-q { color: var(--warn); }
+.mx-na { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--line) 4px 5px); }
+.mx-sum { font-weight: 600; background: var(--bg); }
+
 /* календарь занятия */
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .cal-head b { font-size: 17px; }
