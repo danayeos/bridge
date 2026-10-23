@@ -43,6 +43,7 @@ create table public.classes (
   mode         text not null check (mode in ('online', 'offline')),
   teacher_rate int  not null default 0,             -- оплата учителю за 1 урок, ₸
   schedule     jsonb not null default '[]'::jsonb,
+  rate_history jsonb not null default '[]'::jsonb,   -- [{"from":"2026-10-01","rate":5000}]
   active       boolean not null default true,
   created_at   timestamptz not null default now()
 );
@@ -148,6 +149,19 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from classes where id = cid and teacher_id = public.my_teacher_id());
 $$;
 
+-- Ставка занятия на дату (с учётом истории ставок)
+create or replace function public.class_rate_on(cid uuid, d date) returns int
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select (h ->> 'rate')::int
+       from classes c, jsonb_array_elements(c.rate_history) h
+      where c.id = cid and (h ->> 'from')::date <= d
+      order by (h ->> 'from')::date desc
+      limit 1),
+    (select teacher_rate from classes where id = cid),
+    0);
+$$;
+
 -- Новый аккаунт → профиль. Самый первый аккаунт становится администратором.
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -175,7 +189,7 @@ begin
   if tg_op = 'INSERT' then
     select * into c from classes where id = new.class_id;
     if new.teacher_id is null then new.teacher_id := c.teacher_id; end if;
-    if not public.is_admin() or new.rate = 0 then new.rate := coalesce(c.teacher_rate, 0); end if;
+    if not public.is_admin() or new.rate = 0 then new.rate := public.class_rate_on(new.class_id, new.date); end if;
   end if;
   if not public.is_admin() then
     if tg_op = 'INSERT' then

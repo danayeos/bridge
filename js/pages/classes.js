@@ -11,6 +11,8 @@
       courseName: Object.fromEntries(courses.map((c) => [c.id, c.name])),
       teacherName: Object.fromEntries(teachers.map((t) => [t.id, t.full_name])),
     };
+    // индивидуальные занятия, где не осталось ни одного ученика
+    const orphans = classes.filter((c) => c.kind === 'individual' && !roster.some((r) => r.class_id === c.id));
     const list = classes.filter((c) => c.kind === tab).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
 
     root.innerHTML = `
@@ -25,7 +27,8 @@
         <button class="tab ${tab === 'group' ? 'active' : ''}" data-tab="group">Группы</button>
         <button class="tab ${tab === 'individual' ? 'active' : ''}" data-tab="individual">Индивидуальные</button>
       </div>
-      ${tab === 'individual' ? `<p class="muted small">Индивидуальные занятия создаются в карточке ученика («Добавить курс»). Здесь можно поменять расписание, учителя и оплату учителю.</p>` : ''}
+      ${tab === 'individual' ? `<p class="muted small">Индивидуальные занятия создаются в карточке ученика («Добавить курс»). Здесь можно поменять расписание, учителя и оплату учителю.</p>
+        ${orphans.length ? `<div class="alert">Занятий без учеников: <b>${orphans.length}</b> (ученика или курс удалили). <button class="btn btn-sm btn-danger" id="del-orphans">Удалить их</button></div>` : ''}` : ''}
       <div class="cards">
         ${list.length ? list.map((c) => {
           const st = roster.filter((r) => r.class_id === c.id && r.active);
@@ -47,6 +50,14 @@
 
     $$('[data-tab]', root).forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(root); });
     $('#bulk', root).onclick = () => bulkMark(null);
+    const delOrphans = $('#del-orphans', root);
+    if (delOrphans) delOrphans.onclick = async () => {
+      if (!(await confirmBox(`Удалить ${orphans.length} занятий без учеников вместе с их уроками?`))) return;
+      await busy(delOrphans, async () => {
+        DB.check(await DB.sb.from('classes').delete().in('id', orphans.map((c) => c.id)));
+        toast('Удалено'); render(root);
+      });
+    };
     $('#add-cls', root).onclick = () => editClass(null, ctx, () => render(root));
     $$('[data-edit]', root).forEach((b) => b.onclick = () => editClass(classes.find((c) => c.id === b.dataset.edit), ctx, () => render(root)));
   }
@@ -75,6 +86,20 @@
         <div class="field"><label>Учителю за 1 урок, ₸</label>
           <input type="number" name="cls_rate" min="0" step="500" value="${c?.teacher_rate ?? ''}" placeholder="5000"></div>
       </div>
+      ${c && (c.rate_history || []).length ? `<div class="muted small">История ставок: ${rateHistoryText(c.rate_history)}</div>` : ''}
+      ${c ? `
+      <div class="field sched-from" data-rate-when hidden><label>Ставка изменилась — что случилось?</label>
+        <div class="seg">
+          <label><input type="radio" name="cls_rate_mode" value="change" checked><span>Повысили / понизили с даты</span></label>
+          <label><input type="radio" name="cls_rate_mode" value="fix"><span>Исправляю ошибку</span></label>
+        </div>
+        <div data-rate-hint="change">
+          <label class="small">С какой даты новая ставка?</label>
+          <input type="date" name="cls_rate_from" value="${Logic.today()}">
+          <span class="muted small">Уроки до этой даты — по старой ставке, с этой даты — по новой.</span>
+        </div>
+        <span class="muted small" data-rate-hint="fix" hidden>Новая ставка будет для <b>всех</b> уроков этого занятия, и прошлых тоже.</span>
+      </div>` : ''}
       <div class="field"><label>Расписание</label>
         <div class="sched" data-sched>${sched.map(schedRow).join('')}</div>
         <button type="button" class="btn btn-sm btn-ghost" data-add-slot>+ Добавить день</button>
@@ -92,6 +117,17 @@
           <input type="date" name="cls_sched_from" value="${t}">
           <span class="muted small">До этой даты уроки считаются по старому расписанию, с этой — по новому.</span>
         </div></div>` : ''}`;
+  }
+
+  function rateHistoryText(h) {
+    return [...h].sort((a, b) => a.from.localeCompare(b.from))
+      .map((x) => `${money(x.rate)} ${x.from <= '2000-01-01' ? 'сначала' : 'с ' + UI.fmtDate(x.from)}`).join(' → ');
+  }
+
+  // Ставка на дату по истории
+  function rateOn(h, d, fallback) {
+    const hit = [...h].filter((x) => x.from <= d).sort((a, b) => b.from.localeCompare(a.from))[0];
+    return hit ? hit.rate : fallback;
   }
 
   function schedRow(s) {
@@ -151,6 +187,13 @@
     bindSchedule(form);
     $$('[name=cls_sched_mode]', form).forEach((r) => r.onchange = () =>
       $$('[data-mode-hint]', form).forEach((h) => h.hidden = h.dataset.modeHint !== r.value));
+    const rateInput = form.querySelector('[name=cls_rate]');
+    const rateWhen = $('[data-rate-when]', form);
+    if (c && rateWhen) {
+      rateInput.oninput = () => { rateWhen.hidden = Number(rateInput.value || 0) === c.teacher_rate; };
+      $$('[name=cls_rate_mode]', form).forEach((r) => r.onchange = () =>
+        $$('[data-rate-hint]', form).forEach((h) => h.hidden = h.dataset.rateHint !== r.value));
+    }
     const cal = $('[data-cal]', m.el);
     if (cal) cal.onclick = () => { m.close(); CalendarPage.open(c.id, done); };
     const bulk = $('[data-bulk]', m.el);
@@ -166,7 +209,23 @@
             row.schedule = Logic.mergeSchedule(c.schedule, row.schedule, form.cls_sched_from.value || Logic.today());
           }
         }
+        let rateFrom = null; // с какой даты пересчитать ставку у уже отмеченных уроков
+        if (c && row.teacher_rate !== c.teacher_rate) {
+          if (form.querySelector('[name=cls_rate_mode]:checked').value === 'fix') {
+            if ((c.rate_history || []).length) row.rate_history = [];
+            rateFrom = '2000-01-01';
+          } else {
+            rateFrom = form.cls_rate_from.value || Logic.today();
+            const base = (c.rate_history || []).length ? c.rate_history : [{ from: '2000-01-01', rate: c.teacher_rate }];
+            row.rate_history = [...base.filter((x) => x.from < rateFrom), { from: rateFrom, rate: row.teacher_rate }];
+            row.teacher_rate = rateOn(row.rate_history, Logic.today(), row.teacher_rate);
+          }
+        }
         c ? await DB.update('classes', c.id, row) : await DB.insert('classes', row);
+        if (rateFrom) {
+          const newRate = row.rate_history ? rateOn(row.rate_history, rateFrom, row.teacher_rate) : row.teacher_rate;
+          DB.check(await DB.sb.from('lessons').update({ rate: newRate }).eq('class_id', c.id).gte('date', rateFrom));
+        }
         m.close(); toast('Сохранено'); done();
       });
     };

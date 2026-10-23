@@ -149,7 +149,7 @@
             <summary>Оплаты (${ePays.length})</summary>
             ${ePays.length ? `<table class="table"><tbody>${ePays.map((p) => `
               <tr><td>${fmtDate(p.paid_at)}</td><td>${money(p.amount)}</td><td>+${p.lessons} ур.</td><td class="muted">${esc(p.note || '')}</td>
-              <td><button class="icon-btn" data-del-pay="${p.id}" title="Удалить">🗑</button></td></tr>`).join('')}</tbody></table>` : empty('Оплат пока нет')}
+              <td class="nowrap"><button class="icon-btn" data-edit-pay="${p.id}" title="Изменить">✎</button><button class="icon-btn" data-del-pay="${p.id}" title="Удалить">🗑</button></td></tr>`).join('')}</tbody></table>` : empty('Оплат пока нет')}
           </details>
           <details>
             <summary>Посещаемость (${eAtt.length})</summary>
@@ -174,6 +174,11 @@
     $$('[data-cal]', m.el).forEach((b) => b.onclick = () => CalendarPage.open(b.dataset.cal, onChange));
     $$('[data-sched]', m.el).forEach((b) => b.onclick = () => ClassesPage.editClass(ctx.classById[b.dataset.sched], ctx, reopen));
     $$('[data-bulk]', m.el).forEach((b) => b.onclick = () => { m.close(); ClassesPage.bulkMark(b.dataset.bulk, onChange); });
+    $$('[data-edit-pay]', m.el).forEach((b) => b.onclick = () => {
+      const p = pays.find((x) => x.id === b.dataset.editPay);
+      const e = ens.find((x) => x.id === p.enrollment_id);
+      payModal(e, s, ctx.classById[e.class_id], reopen, p);
+    });
     $$('[data-del-pay]', m.el).forEach((b) => b.onclick = async () => {
       if (!(await confirmBox('Удалить эту оплату?'))) return;
       await busy(b, async () => { await DB.remove('payments', b.dataset.delPay); toast('Оплата удалена'); reopen(); });
@@ -206,7 +211,16 @@
     const del = $('[data-del]', m.el);
     if (del) del.onclick = async () => {
       if (!(await confirmBox(`Удалить ученика «${s.full_name}» вместе с оплатами и посещаемостью? Лучше убрать в архив.`))) return;
-      await busy(del, async () => { await DB.remove('students', s.id); m.close(); toast('Удалено'); location.hash = '#/students'; done(null); });
+      await busy(del, async () => {
+        // индивидуальные занятия ученика удаляем вместе с ним (если в них больше никого нет)
+        const [enrs, classes] = await Promise.all([DB.enrollments(), DB.classes()]);
+        const mine = new Set(enrs.filter((x) => x.student_id === s.id).map((x) => x.class_id));
+        const solo = classes.filter((c) => c.kind === 'individual' && mine.has(c.id) &&
+          !enrs.some((x) => x.class_id === c.id && x.student_id !== s.id));
+        await DB.remove('students', s.id);
+        if (solo.length) DB.check(await DB.sb.from('classes').delete().in('id', solo.map((c) => c.id)));
+        m.close(); toast('Удалено'); location.hash = '#/students'; done(null);
+      });
     };
   }
 
@@ -241,11 +255,15 @@
             <input type="number" name="package_price" min="0" step="1000" value="${e?.package_price ?? ''}" placeholder="80000"></div>
         </div>
         <datalist id="pkg-sizes"><option value="8"><option value="12"></datalist>
-        <div class="row2">
-          <div class="field"><label>Начало занятий</label><input type="date" name="start_date" value="${e?.start_date || Logic.today()}"></div>
-          <div class="field"><label>Уже оплачено уроков <span class="muted small">(остаток на сегодня)</span></label>
-            <input type="number" name="initial_lessons" value="${e?.initial_lessons ?? 0}"></div>
-        </div>
+        <div class="field"><label>Дата первого урока</label><input type="date" name="start_date" value="${e?.start_date || Logic.today()}">
+          <span class="muted small">С этой даты ученик появляется на уроках и уроки начинают считаться.</span></div>
+        <details ${e?.initial_lessons ? 'open' : ''}>
+          <summary>Не хочу вносить старые оплаты и уроки</summary>
+          <div class="field" style="margin-top:8px"><label>Сколько оплаченных уроков у ученика осталось на сегодня</label>
+            <input type="number" name="initial_lessons" value="${e?.initial_lessons ?? 0}">
+            <span class="muted small">Например: оплатил 8, прошло 5 — напишите <b>3</b>, а «Дату первого урока» поставьте сегодняшнюю.
+              Если вы вносите все старые оплаты и прошлые уроки — оставьте <b>0</b>.</span></div>
+        </details>
         ${e ? `<label class="check"><input type="checkbox" name="active" ${e.active ? 'checked' : ''}> Ходит на этот курс</label>` : ''}
         <div class="form-actions">
           ${e ? `<button type="button" class="btn btn-danger" data-del>Удалить курс</button>` : ''}
@@ -311,25 +329,26 @@
   }
 
   // ---------- оплата ----------
-  function payModal(e, s, c, done) {
-    const m = modal('Новая оплата', `
+  // p — существующая оплата (изменить) или пусто (новая)
+  function payModal(e, s, c, done, p) {
+    const m = modal(p ? 'Изменить оплату' : 'Новая оплата', `
       <form class="form">
         <p><b>${esc(s?.full_name || '')}</b> · ${esc(c?.name || '')}</p>
         <div class="row2">
-          <div class="field"><label>Дата оплаты</label><input type="date" name="paid_at" value="${Logic.today()}" required></div>
-          <div class="field"><label>Сумма, ₸</label><input type="number" name="amount" min="0" step="1000" value="${e.plan === 'support' ? '' : e.package_price || ''}" required></div>
+          <div class="field"><label>Дата оплаты</label><input type="date" name="paid_at" value="${p ? p.paid_at : Logic.today()}" required></div>
+          <div class="field"><label>Сумма, ₸</label><input type="number" name="amount" min="0" step="1000" value="${p ? p.amount : e.plan === 'support' ? '' : e.package_price || ''}" required></div>
         </div>
         ${e.plan === 'support' ? `
         <p class="muted small">Сопровождение: уроки не считаются, оплата просто сохранится для отчёта «Деньги».</p>` : ''}
         <div class="field" ${e.plan === 'support' ? 'hidden' : ''}><label>Сколько уроков оплачено</label>
-          <input type="number" name="lessons" min="0" value="${e.plan === 'support' ? 0 : e.package_lessons}" required>
+          <input type="number" name="lessons" min="0" value="${p ? p.lessons : e.plan === 'support' ? 0 : e.package_lessons}" required>
           <div class="quick">
             ${[[1, '1 пакет'], [3, '3 мес.'], [6, '6 мес.'], [24, '2 года']].map(([k, t]) =>
               `<button type="button" class="chip" data-mult="${k}">${t}</button>`).join('')}
           </div>
           <span class="muted small">Если остались уроки с прошлого пакета, они сохранятся и прибавятся.</span>
         </div>
-        <div class="field"><label>Заметка</label><input name="note" placeholder="Необязательно"></div>
+        <div class="field"><label>Заметка</label><input name="note" value="${esc(p?.note || '')}" placeholder="Необязательно"></div>
         <div class="form-actions">
           <button type="button" class="btn" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить оплату</button>
@@ -345,7 +364,8 @@
       ev.preventDefault();
       busy(form.querySelector('[type=submit]'), async () => {
         const f = formData(form);
-        await DB.insert('payments', { enrollment_id: e.id, paid_at: f.paid_at, amount: f.amount || 0, lessons: f.lessons || 0, note: f.note || null });
+        const row = { paid_at: f.paid_at, amount: f.amount || 0, lessons: f.lessons || 0, note: f.note || null };
+        p ? await DB.update('payments', p.id, row) : await DB.insert('payments', { ...row, enrollment_id: e.id });
         m.close(); toast('Оплата сохранена'); done();
       });
     };

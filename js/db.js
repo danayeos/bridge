@@ -15,6 +15,7 @@
     if (/Email not confirmed/i.test(msg)) return 'Email не подтверждён — проверьте почту';
     if (/duplicate key/i.test(msg)) return 'Такая запись уже есть';
     if (/row-level security/i.test(msg)) return 'Нет доступа';
+    if (/rate_history/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-1-rate-history.sql в Supabase → SQL Editor';
     return msg;
   }
 
