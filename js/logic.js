@@ -161,7 +161,25 @@
     return { size: pkg, done: pkg - left, left, ahead: Math.floor((remaining - 1) / pkg) };
   }
 
-  const api = { packProgress, toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
+  // Сопровождение: срок хранится в package_lessons как 1000 + число месяцев (1000 — до конца, до поступления).
+  // Так старые записи (там просто 8 — размер пакета по умолчанию) не путаются со сроком и считаются «до конца».
+  const SUP_BASE = 1000;
+  function supportMonths(e) {
+    const v = Number(e.package_lessons);
+    return v >= SUP_BASE ? v - SUP_BASE : 0;
+  }
+  const encodeSupport = (months) => SUP_BASE + (Number(months) || 0);
+  // Возвращает дату окончания сопровождения или null («до конца»).
+  function supportUntil(e) {
+    const months = supportMonths(e);
+    if (!months || !e.start_date) return null;
+    const [y, m, d] = e.start_date.split('-').map(Number);
+    const end = new Date(y, m - 1 + months, d);
+    return toDateStr(end);
+  }
+  const SUPPORT_TERMS = [[6, '6 месяцев'], [12, '1 год'], [24, '2 года'], [0, 'До конца (до поступления)']];
+
+  const api = { supportUntil, supportMonths, encodeSupport, SUPPORT_TERMS, packProgress, toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);

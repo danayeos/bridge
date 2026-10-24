@@ -24,6 +24,9 @@
     });
     const due = rows.filter((r) => r.status === 'due').sort((a, b) => a.st.remaining - b.st.remaining);
     const debt = rows.filter((r) => r.status === 'debt').sort((a, b) => a.st.remaining - b.st.remaining);
+    // сопровождение: срок закончился или закончится в ближайшие 30 дней
+    const supEnd = active.filter((e) => e.plan === 'support' && Logic.supportUntil(e) && Logic.supportUntil(e) <= Logic.addDays(t, 30))
+      .sort((a, b) => Logic.supportUntil(a).localeCompare(Logic.supportUntil(b)));
 
     // нужно решить
     const absences = [];
@@ -93,6 +96,19 @@
           </div>`;
         }).join('')}</div>` : empty('Должников нет')}
       </section>
+      ${supEnd.length ? `
+      <section class="section">
+        <h2>Сопровождение заканчивается <span class="count">${supEnd.length}</span></h2>
+        <div class="list">${supEnd.map((e) => {
+          const u = Logic.supportUntil(e);
+          return `
+          <div class="list-row">
+            ${who(e)}
+            <div class="row-meta"><span class="badge ${u < t ? 'badge-debt' : 'badge-due'}">${u < t ? 'закончилось' : 'до'} ${fmtShort(u)}</span></div>
+            <span></span>
+          </div>`;
+        }).join('')}</div>
+      </section>` : ''}
 
       <section class="section">
         <h2>Пропуски: сгорает или нет? <span class="count">${absences.length}</span></h2>
