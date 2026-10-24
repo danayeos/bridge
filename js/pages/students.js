@@ -68,10 +68,9 @@
     if (st === 'support') return `<span class="badge badge-support">Сопровождение · прошло ${ctx.stat(e).used_lessons} ур.</span>`;
     if (st === 'debt') return `<span class="badge badge-debt">Долг ${-r} ${lessonsWord(-r)}</span>`;
     // прогресс внутри текущего пакета: «прошло 5 из 8»
-    const pkg = e.package_lessons;
-    const prog = r >= 0 && r <= pkg ? `прошло ${pkg - r} из ${pkg} · ` : '';
-    if (st === 'due') return `<span class="badge badge-due">${prog}осталось ${r}</span>`;
-    return `<span class="badge badge-ok">${prog}осталось ${r}</span>`;
+    const pk = Logic.packProgress(r, e.package_lessons);
+    const text = `прошло ${pk.done} из ${pk.size} · осталось ${pk.left}${pk.ahead ? ` (+${pk.ahead} ${pk.ahead === 1 ? 'пакет' : 'пакета'} оплачено)` : ''}`;
+    return `<span class="badge ${st === 'due' ? 'badge-due' : 'badge-ok'}">${text}</span>`;
   }
 
   function row(s, ctx) {
@@ -131,11 +130,17 @@
             <div><span>Оплачено всего</span><b>${money(ePays.reduce((x, p) => x + p.amount, 0))}</b></div>
             <div><span>Оплата</span><b>не нужна</b></div>
           </div>` : `
+          ${(() => {
+            // показываем текущий пакет («прошло 6 из 12»), а не сумму за всё время
+            const pk = Logic.packProgress(st.remaining, e.package_lessons);
+            return `
           <div class="enr-nums">
-            <div><span>Оплачено уроков</span><b>${st.paid_lessons}</b></div>
-            <div><span>Прошло</span><b>${st.used_lessons}</b></div>
-            <div><span>Осталось</span><b>${st.remaining}</b></div>
-          </div>`}
+            <div><span>Пакет</span><b>${pk.size} ур.</b></div>
+            <div><span>Прошло</span><b>${pk.done}</b></div>
+            <div><span>Осталось</span><b>${pk.left}</b></div>
+          </div>
+          <div class="muted small">${pk.ahead ? `Оплачено ещё ${pk.ahead} ${pk.ahead === 1 ? 'пакет' : 'пакета'} вперёд (всего осталось ${st.remaining} ${lessonsWord(st.remaining)}). ` : ''}За всё время: оплачено ${st.paid_lessons} ${lessonsWord(st.paid_lessons)}, прошло ${st.used_lessons}.</div>`;
+          })()}`}
           ${e.plan === 'support' || !e.active ? '' : (() => {
             if (st.remaining < 0) return `<div class="pay-hint bad">Уроки идут без оплаты: долг ${-st.remaining} ${lessonsWord(-st.remaining)}. Когда оплатит — нажмите «+ Оплата», долг вычтется из нового пакета.</div>`;
             if (st.remaining === 0) return `<div class="pay-hint warn">Оплаченные уроки закончились — пора оплатить следующий пакет.</div>`;

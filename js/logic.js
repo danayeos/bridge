@@ -152,7 +152,16 @@
     return 'ok';
   }
 
-  const api = { toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
+  // Текущий пакет: оплатили 24, прошло 18 → это 2-й пакет из 12: прошло 6, осталось 6.
+  // ahead — сколько целых пакетов оплачено заранее (после текущего).
+  function packProgress(remaining, pkg) {
+    pkg = pkg > 0 ? pkg : 8;
+    if (remaining <= 0) return { size: pkg, done: pkg, left: 0, ahead: 0 };
+    const left = ((remaining - 1) % pkg) + 1;
+    return { size: pkg, done: pkg - left, left, ahead: Math.floor((remaining - 1) / pkg) };
+  }
+
+  const api = { packProgress, toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);
