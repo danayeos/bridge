@@ -18,17 +18,9 @@
     const enrById = Object.fromEntries(enrollments.map((e) => [e.id, e]));
 
     const active = enrollments.filter((e) => e.active && studentById[e.student_id]?.active);
-    // общая оплата за несколько курсов — одна строка на весь «счёт»
-    const payer = (e) => (e.pay_with && enrById[e.pay_with]) || e;
-    const accounts = new Map();
-    for (const e of active) {
-      const p = payer(e);
-      if (!accounts.has(p.id)) accounts.set(p.id, { e, payer: p, all: [] });
-      accounts.get(p.id).all.push(e);
-    }
-    const rows = [...accounts.values()].map(({ e, payer: p, all }) => {
+    const rows = active.map((e) => {
       const st = statBy[e.id] || { remaining: e.initial_lessons, last_payment: null };
-      return { e: p, all, st, status: Logic.payStatus(p, st.remaining) };
+      return { e, st, status: Logic.payStatus(e, st.remaining) };
     });
     const due = rows.filter((r) => r.status === 'due').sort((a, b) => a.st.remaining - b.st.remaining);
     const debt = rows.filter((r) => r.status === 'debt').sort((a, b) => a.st.remaining - b.st.remaining);
@@ -48,10 +40,14 @@
     const income = monthPays.reduce((s, p) => s + p.amount, 0);
     const monthLessons = lessons.filter((l) => l.date >= mFrom && l.status === 'done').length;
 
-    const who = (e, all = [e]) => {
-      const part = (x) => { const c = classById[x.class_id] || {}; return `${courseName[c.course_id] || ''} · ${c.kind === 'group' ? c.name || '' : 'индивидуально'}`; };
+    // курсы, которые оплачиваются одной оплатой с этим
+    const payRoot = (e) => (e.pay_with && enrById[e.pay_with] ? e.pay_with : e.id);
+    const bundle = (e) => active.filter((x) => x.id !== e.id && payRoot(x) === payRoot(e));
+    const who = (e) => {
+      const c = classById[e.class_id] || {};
+      const others = bundle(e);
       return `<div class="who"><b>${esc(studentById[e.student_id]?.full_name)}</b>
-        <span class="muted small">${esc(all.map(part).join(' + '))}${all.length > 1 ? ' · общая оплата' : ''}</span></div>`;
+        <span class="muted small">${esc(courseName[c.course_id] || '')} · ${c.kind === 'group' ? esc(c.name || '') : 'индивидуально'}${others.length ? ` · 💳 одна оплата с ${others.map((x) => esc(courseName[classById[x.class_id]?.course_id] || '')).join(', ')}` : ''}</span></div>`;
     };
 
     root.innerHTML = `
@@ -69,10 +65,10 @@
         <p class="muted small">Остался 1 урок или пакет закончился — напишите ученику в WhatsApp.</p>
         ${due.length ? `<div class="list">${due.map((r) => `
           <div class="list-row">
-            ${who(r.e, r.all)}
+            ${who(r.e)}
             <div class="row-meta">
               <span class="badge badge-due">${r.st.remaining === 0 ? 'Уроки закончились' : `Остался ${r.st.remaining} ${lessonsWord(r.st.remaining)}`}</span>
-              ${(() => { const u = r.st.remaining > 0 && r.all.length === 1 && Logic.paidUntil(classById[r.all[0].class_id], r.st.remaining, t); return u ? `<span class="small">последний оплаченный урок: <b>${fmtShort(u)}</b></span>` : ''; })()}
+              ${(() => { const u = r.st.remaining > 0 && Logic.paidUntil(classById[r.e.class_id], r.st.remaining, t); return u ? `<span class="small">последний оплаченный урок: <b>${fmtShort(u)}</b></span>` : ''; })()}
               <span class="muted small">${money(r.e.package_price)} / ${r.e.package_lessons} ур.${r.st.last_payment ? ' · посл. оплата ' + fmtDate(r.st.last_payment) : ''}</span>
             </div>
             <button class="btn btn-primary btn-sm" data-pay="${r.e.id}">Оплатил</button>
@@ -87,7 +83,7 @@
           const perLesson = r.e.package_lessons ? r.e.package_price / r.e.package_lessons : 0;
           return `
           <div class="list-row">
-            ${who(r.e, r.all)}
+            ${who(r.e)}
             <div class="row-meta">
               <span class="badge badge-debt">Долг: ${n} ${lessonsWord(n)}</span>
               <span class="muted small">≈ ${money(n * perLesson)}</span>

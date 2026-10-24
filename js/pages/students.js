@@ -54,12 +54,11 @@
       enrOf: (sid) => enrollments.filter((e) => e.student_id === sid),
       enrById: Object.fromEntries(enrollments.map((e) => [e.id, e])),
     };
-    // курс, через который платят (при общей оплате — главный курс)
-    ctx.payer = (e) => (e.pay_with && ctx.enrById[e.pay_with]) || e;
-    // все курсы с этой же общей оплатой
-    ctx.shared = (e) => { const p = ctx.payer(e); return enrollments.filter((x) => ctx.payer(x).id === p.id); };
+    // курсы, которые оплачиваются одной оплатой (уроки у каждого курса свои)
+    const root = (e) => (e.pay_with && ctx.enrById[e.pay_with] ? e.pay_with : e.id);
+    ctx.shared = (e) => enrollments.filter((x) => root(x) === root(e) && (x.active || x.id === e.id));
     ctx.courseOf = (e) => ctx.courseName[(ctx.classById[e.class_id] || {}).course_id] || '';
-    ctx.status = (e) => Logic.payStatus(ctx.payer(e), ctx.remaining(e));
+    ctx.status = (e) => Logic.payStatus(e, ctx.remaining(e));
     return ctx;
   }
 
@@ -69,7 +68,7 @@
     if (st === 'support') return `<span class="badge badge-support">Сопровождение · прошло ${ctx.stat(e).used_lessons} ур.</span>`;
     if (st === 'debt') return `<span class="badge badge-debt">Долг ${-r} ${lessonsWord(-r)}</span>`;
     // прогресс внутри текущего пакета: «прошло 5 из 8»
-    const pkg = ctx.payer(e).package_lessons;
+    const pkg = e.package_lessons;
     const prog = r >= 0 && r <= pkg ? `прошло ${pkg - r} из ${pkg} · ` : '';
     if (st === 'due') return `<span class="badge badge-due">${prog}осталось ${r}</span>`;
     return `<span class="badge badge-ok">${prog}осталось ${r}</span>`;
@@ -81,10 +80,7 @@
       <button class="list-row list-row-btn" data-open="${s.id}">
         <div class="who"><b>${esc(s.full_name)}</b>${s.note ? `<span class="muted small">${esc(s.note)}</span>` : ''}</div>
         <div class="enr-chips">
-          ${ens.length ? ens.filter((e) => !ens.some((x) => x.id !== e.id && ctx.payer(e).id === ctx.payer(x).id && ens.indexOf(x) < ens.indexOf(e))).map((e) => {
-            const names = ens.filter((x) => ctx.payer(x).id === ctx.payer(e).id).map((x) => ctx.courseOf(x));
-            return `<span class="enr-chip"><span>${esc(names.join(' + '))}</span> ${statusBadge(e, ctx)}</span>`;
-          }).join('') : '<span class="badge badge-due">Нет курса — нажмите, чтобы добавить</span>'}
+          ${ens.length ? ens.map((e) => `<span class="enr-chip"><span>${esc(ctx.courseOf(e))}</span> ${statusBadge(e, ctx)}</span>`).join('') : '<span class="badge badge-due">Нет курса — нажмите, чтобы добавить</span>'}
         </div>
       </button>`;
   }
@@ -115,9 +111,7 @@
       ${ens.length ? ens.map((e) => {
         const c = ctx.classById[e.class_id] || {};
         const st = ctx.stat(e);
-        const pe = ctx.payer(e);           // через какой курс идёт оплата
-        const linked = pe.id !== e.id;     // этот курс оплачивается вместе с другим
-        const together = ctx.shared(e);    // все курсы с общей оплатой
+        const together = ctx.shared(e);    // курсы, которые оплачиваются одной оплатой
         const ePays = pays.filter((p) => p.enrollment_id === e.id);
         const eAtt = att.filter((a) => a.enrollment_id === e.id && a.lessons && ['done', 'cancelled'].includes(a.lessons.status));
         return `
@@ -126,12 +120,12 @@
             <div>
               <div class="enr-title">${esc(ctx.courseName[c.course_id] || '')}${c.kind === 'group' ? ' — ' + esc(c.name || '') : ''}</div>
               <div class="muted small">${L.kind[c.kind] || ''} · ${L.mode[c.mode] || ''} · ${esc(ctx.teacherName[c.teacher_id] || 'без учителя')} · ${schedText(c.schedule)}</div>
-              <div class="muted small">${linked ? `Оплата общая с курсом «${esc(ctx.courseOf(pe))}»` : e.plan === 'support' ? 'Сопровождение' : `${money(e.package_price)} за ${e.package_lessons} ур.`} · с ${fmtDate(e.start_date)}${e.active ? '' : ' · <b>не ходит</b>'}</div>
-              ${together.length > 1 ? `<div class="shared-note">💳 Общая оплата: ${together.map((x) => esc(ctx.courseOf(x))).join(' + ')} — уроки считаются вместе</div>` : ''}
+              <div class="muted small">${e.plan === 'support' ? 'Сопровождение' : `${money(e.package_price)} за ${e.package_lessons} ур.`} · с ${fmtDate(e.start_date)}${e.active ? '' : ' · <b>не ходит</b>'}</div>
+              ${together.length > 1 ? `<div class="shared-note">💳 Одна оплата за ${together.map((x) => esc(ctx.courseOf(x))).join(' + ')} · уроки у каждого курса свои</div>` : ''}
             </div>
             ${statusBadge(e, ctx)}
           </div>
-          ${pe.plan === 'support' ? `
+          ${e.plan === 'support' ? `
           <div class="enr-nums">
             <div><span>Прошло уроков</span><b>${st.used_lessons}</b></div>
             <div><span>Оплачено всего</span><b>${money(ePays.reduce((x, p) => x + p.amount, 0))}</b></div>
@@ -142,11 +136,10 @@
             <div><span>Прошло</span><b>${st.used_lessons}</b></div>
             <div><span>Осталось</span><b>${st.remaining}</b></div>
           </div>`}
-          ${pe.plan === 'support' || !e.active ? '' : (() => {
+          ${e.plan === 'support' || !e.active ? '' : (() => {
             if (st.remaining < 0) return `<div class="pay-hint bad">Уроки идут без оплаты: долг ${-st.remaining} ${lessonsWord(-st.remaining)}. Когда оплатит — нажмите «+ Оплата», долг вычтется из нового пакета.</div>`;
             if (st.remaining === 0) return `<div class="pay-hint warn">Оплаченные уроки закончились — пора оплатить следующий пакет.</div>`;
-            // при общей оплате уроки тратятся во всех курсах — дату по одному расписанию не считаем
-            const until = together.length === 1 && Logic.paidUntil(c, st.remaining, Logic.today());
+            const until = Logic.paidUntil(c, st.remaining, Logic.today());
             return `<div class="pay-hint">${until ? `По расписанию оплаченных уроков хватит примерно до <b>${fmtDate(until, true)}</b> — это последний оплаченный урок.` : `Осталось ${st.remaining} ${lessonsWord(st.remaining)}.`}</div>`;
           })()}
           <div class="btn-group">
@@ -159,7 +152,7 @@
           <details>
             <summary>Оплаты (${ePays.length})</summary>
             ${ePays.length ? `<table class="table"><tbody>${ePays.map((p) => `
-              <tr><td>${fmtDate(p.paid_at)}</td><td>${money(p.amount)}</td><td>+${p.lessons} ур.</td><td class="muted">${esc(p.note || '')}</td>
+              <tr><td>${fmtDate(p.paid_at)}</td><td>${money(p.amount)}${p.bundle_id ? `<div class="muted small">из общей оплаты ${money(pays.filter((x) => x.bundle_id === p.bundle_id).reduce((n, x) => n + x.amount, 0))}</div>` : ''}</td><td>+${p.lessons} ур.</td><td class="muted">${esc(p.note || '')}</td>
               <td class="nowrap"><button class="icon-btn" data-edit-pay="${p.id}" title="Изменить">✎</button><button class="icon-btn" data-del-pay="${p.id}" title="Удалить">🗑</button></td></tr>`).join('')}</tbody></table>` : empty('Оплат пока нет')}
           </details>
           <details>
@@ -178,8 +171,8 @@
     $('[data-edit]', m.el).onclick = () => editStudent(s, reopen);
     $('[data-enroll]', m.el).onclick = () => editEnrollment(null, s, ctx, reopen);
     $$('[data-pay]', m.el).forEach((b) => b.onclick = () => {
-      const e = ctx.payer(ens.find((x) => x.id === b.dataset.pay));
-      payModal(e, s, ctx.classById[e.class_id], reopen, null, ctx.shared(e).map((x) => ctx.courseOf(x)));
+      const e = ens.find((x) => x.id === b.dataset.pay);
+      payModal(e, s, ctx.classById[e.class_id], reopen);
     });
     $$('[data-enr-edit]', m.el).forEach((b) => b.onclick = () => editEnrollment(ens.find((x) => x.id === b.dataset.enrEdit), s, ctx, reopen));
     $$('[data-cal]', m.el).forEach((b) => b.onclick = () => CalendarPage.open(b.dataset.cal, onChange));
@@ -191,8 +184,13 @@
       payModal(e, s, ctx.classById[e.class_id], reopen, p);
     });
     $$('[data-del-pay]', m.el).forEach((b) => b.onclick = async () => {
-      if (!(await confirmBox('Удалить эту оплату?'))) return;
-      await busy(b, async () => { await DB.remove('payments', b.dataset.delPay); toast('Оплата удалена'); reopen(); });
+      const p = pays.find((x) => x.id === b.dataset.delPay);
+      if (!(await confirmBox(p.bundle_id ? 'Это общая оплата за несколько курсов. Удалить её целиком (у всех курсов)?' : 'Удалить эту оплату?'))) return;
+      await busy(b, async () => {
+        if (p.bundle_id) DB.check(await DB.sb.from('payments').delete().eq('bundle_id', p.bundle_id));
+        else await DB.remove('payments', p.id);
+        toast('Оплата удалена'); reopen();
+      });
     });
     // новый ученик — сразу предлагаем добавить курс
     if (opts.addCourse) editEnrollment(null, s, ctx, reopen);
@@ -265,10 +263,10 @@
           <span class="muted small">С этой даты ученик появляется на уроках и уроки начинают считаться.</span></div>
         <h4>Оплата</h4>
         ${isMain ? `<p class="muted small">💳 С этим курсом оплачиваются вместе: ${ctx.enrollments.filter((x) => x.pay_with === e.id).map((x) => esc(ctx.courseOf(x))).join(', ')}.
-          Укажите здесь общий пакет на все курсы (например: 16 уроков за 150 000 ₸).</p>` : payOpts.length ? `
+          При «+ Оплата» сразу вносится одна оплата за все эти курсы.</p>` : payOpts.length ? `
         <div class="field"><label>Как платит за этот курс</label>
-          <select name="pay_with">${options(payOpts.map(([id, t]) => [id, `Вместе с курсом: ${t}`]), e?.pay_with || '', { empty: 'Отдельная оплата' })}</select>
-          <span class="muted small">«Вместе» — одна оплата и один общий счётчик уроков на оба курса. Уроки из обоих курсов списываются из одного пакета.</span></div>` : ''}
+          <select name="pay_with">${options(payOpts.map(([id, t]) => [id, `Одной оплатой с курсом: ${t}`]), e?.pay_with || '', { empty: 'Отдельная оплата' })}</select>
+          <span class="muted small">Ученик платит один раз за оба курса, но уроки у каждого курса считаются отдельно (например, по 12 уроков на каждый курс).</span></div>` : ''}
         <div data-own-pay>
         <div class="seg">
           <label><input type="radio" name="plan" value="package" ${!e || e.plan === 'package' ? 'checked' : ''}><span>Пакет уроков</span></label>
@@ -289,7 +287,6 @@
               Если вы вносите все старые оплаты и прошлые уроки — оставьте <b>0</b>.</span></div>
         </details>
         </div>
-        <p class="muted small" data-shared-hint hidden>Пакет, цену и оплаты указывайте в главном курсе — сюда «+ Оплата» тоже будет записывать туда.</p>
         ${e ? `<label class="check"><input type="checkbox" name="active" ${e.active ? 'checked' : ''}> Ходит на этот курс</label>` : ''}
         <div class="form-actions">
           ${e ? `<button type="button" class="btn btn-danger" data-del>Удалить курс</button>` : ''}
@@ -300,14 +297,6 @@
 
     const form = $('form', m.el);
     const payWith = form.querySelector('[name=pay_with]');
-    if (payWith) {
-      const syncPay = () => {
-        $$('[data-own-pay]', form).forEach((p) => p.hidden = !!payWith.value);
-        $('[data-shared-hint]', form).hidden = !payWith.value;
-      };
-      payWith.onchange = syncPay;
-      syncPay();
-    }
     if (!e && !preset) {
       const sync = () => {
         const k = form.querySelector('[name=kind]:checked').value;
@@ -365,25 +354,41 @@
   }
 
   // ---------- оплата ----------
-  // p — существующая оплата (изменить) или пусто (новая)
-  function payModal(e, s, c, done, p, together) {
+  // p — существующая оплата (изменить) или пусто (новая).
+  // Если курсы ученика оплачиваются одной оплатой — одна сумма, а уроки у каждого курса свои.
+  async function payModal(e, s, c, done, p) {
+    const [enrollments, classes, courses] = await Promise.all([DB.enrollments(), DB.classes(), DB.courses()]);
+    const enrById = Object.fromEntries(enrollments.map((x) => [x.id, x]));
+    const classById = Object.fromEntries(classes.map((x) => [x.id, x]));
+    const courseName = Object.fromEntries(courses.map((x) => [x.id, x.name]));
+    const root = (x) => (x.pay_with && enrById[x.pay_with] ? x.pay_with : x.id);
+    // строки оплаты (при изменении) и курсы, которые она покрывает
+    const old = p?.bundle_id ? DB.check(await DB.sb.from('payments').select('*').eq('bundle_id', p.bundle_id)) : p ? [p] : [];
+    const members = p ? old.map((x) => enrById[x.enrollment_id]).filter(Boolean)
+      : [e, ...enrollments.filter((x) => x.id !== e.id && root(x) === root(e) && x.active)];
+    const multi = members.length > 1;
+    const oldOf = (x) => old.find((o) => o.enrollment_id === x.id);
+    const title = (x) => { const k = classById[x.class_id] || {}; return `${courseName[k.course_id] || ''}${k.kind === 'group' ? ' — ' + k.name : ''}`; };
+    const priceSum = members.reduce((n, x) => n + (x.plan === 'support' ? 0 : x.package_price || 0), 0);
+
     const m = modal(p ? 'Изменить оплату' : 'Новая оплата', `
       <form class="form">
-        <p><b>${esc(s?.full_name || '')}</b> · ${together && together.length > 1 ? `общая оплата: ${esc(together.join(' + '))}` : esc(c?.name || '')}</p>
+        <p><b>${esc(s?.full_name || '')}</b> · ${multi ? `одна оплата за ${members.length} курса` : esc(c?.name || '')}</p>
         <div class="row2">
           <div class="field"><label>Дата оплаты</label><input type="date" name="paid_at" value="${p ? p.paid_at : Logic.today()}" required></div>
-          <div class="field"><label>Сумма, ₸</label><input type="number" name="amount" min="0" step="1000" value="${p ? p.amount : e.plan === 'support' ? '' : e.package_price || ''}" required></div>
+          <div class="field"><label>Сумма${multi ? ' за все курсы' : ''}, ₸</label><input type="number" name="amount" min="0" step="1000" value="${p ? old.reduce((n, x) => n + x.amount, 0) : priceSum || ''}" required></div>
         </div>
-        ${e.plan === 'support' ? `
-        <p class="muted small">Сопровождение: уроки не считаются, оплата просто сохранится для отчёта «Деньги».</p>` : ''}
-        <div class="field" ${e.plan === 'support' ? 'hidden' : ''}><label>Сколько уроков оплачено</label>
-          <input type="number" name="lessons" min="0" value="${p ? p.lessons : e.plan === 'support' ? 0 : e.package_lessons}" required>
-          <div class="quick">
-            ${[[1, '1 пакет'], [3, '3 мес.'], [6, '6 мес.'], [24, '2 года']].map(([k, t]) =>
-              `<button type="button" class="chip" data-mult="${k}">${t}</button>`).join('')}
-          </div>
-          <span class="muted small">Если остались уроки с прошлого пакета, они сохранятся и прибавятся.</span>
+        ${members.map((x) => x.plan === 'support' ? `
+        <p class="muted small">${multi ? `<b>${esc(title(x))}</b>: сопровождение — ` : 'Сопровождение: '}уроки не считаются, оплата просто сохранится для отчёта «Деньги».</p>
+        <input type="hidden" data-les="${x.id}" value="0">` : `
+        <div class="field"><label>${multi ? `Уроков по курсу «${esc(title(x))}»` : 'Сколько уроков оплачено'}</label>
+          <input type="number" data-les="${x.id}" min="0" value="${oldOf(x) ? oldOf(x).lessons : x.package_lessons}" required></div>`).join('')}
+        ${members.some((x) => x.plan !== 'support') ? `
+        <div class="quick">
+          ${[[1, '1 пакет'], [3, '3 мес.'], [6, '6 мес.'], [24, '2 года']].map(([k, t]) =>
+            `<button type="button" class="chip" data-mult="${k}">${t}</button>`).join('')}
         </div>
+        <span class="muted small">Если остались уроки с прошлого пакета, они сохранятся и прибавятся.${multi ? ' Уроки у каждого курса считаются отдельно.' : ''}</span>` : ''}
         <div class="field"><label>Заметка</label><input name="note" value="${esc(p?.note || '')}" placeholder="Необязательно"></div>
         <div class="form-actions">
           <button type="button" class="btn" data-close>Отмена</button>
@@ -391,17 +396,37 @@
         </div>
       </form>`);
     const form = $('form', m.el);
+    const les = (x) => form.querySelector(`[data-les="${x.id}"]`);
     $$('[data-mult]', form).forEach((b) => b.onclick = () => {
       const k = Number(b.dataset.mult);
-      form.lessons.value = e.package_lessons * k;
-      form.amount.value = (e.package_price || 0) * k;
+      members.forEach((x) => { if (x.plan !== 'support') les(x).value = x.package_lessons * k; });
+      form.amount.value = priceSum * k;
     });
     form.onsubmit = (ev) => {
       ev.preventDefault();
       busy(form.querySelector('[type=submit]'), async () => {
         const f = formData(form);
-        const row = { paid_at: f.paid_at, amount: f.amount || 0, lessons: f.lessons || 0, note: f.note || null };
-        p ? await DB.update('payments', p.id, row) : await DB.insert('payments', { ...row, enrollment_id: e.id });
+        const total = f.amount || 0;
+        const lessons = members.map((x) => Number(les(x).value) || 0);
+        // сумму делим между курсами по их цене за урок (для отчёта по курсам); в сумме — ровно total
+        const w = members.map((x, i) => (x.plan === 'support' ? 0 : (x.package_price || 0) / (x.package_lessons || 1)) * lessons[i]);
+        const wSum = w.reduce((a, b) => a + b, 0);
+        const amounts = members.map((x, i) => (wSum ? Math.round((total * w[i]) / wSum) : i === 0 ? total : 0));
+        amounts[0] += total - amounts.reduce((a, b) => a + b, 0);
+        const base = { paid_at: f.paid_at, note: f.note || null };
+        if (p) {
+          for (let i = 0; i < members.length; i++) {
+            await DB.update('payments', oldOf(members[i]).id, { ...base, amount: amounts[i], lessons: lessons[i] });
+          }
+        } else {
+          const first = await DB.insert('payments', { ...base, amount: amounts[0], lessons: lessons[0], enrollment_id: members[0].id });
+          if (multi) {
+            await DB.update('payments', first.id, { bundle_id: first.id });
+            for (let i = 1; i < members.length; i++) {
+              await DB.insert('payments', { ...base, amount: amounts[i], lessons: lessons[i], enrollment_id: members[i].id, bundle_id: first.id });
+            }
+          }
+        }
         m.close(); toast('Оплата сохранена'); done();
       });
     };

@@ -71,7 +71,7 @@ create table public.enrollments (
   start_date      date not null default current_date,
   initial_lessons int  not null default 0,          -- сколько оплаченных уроков было на момент добавления
   active          boolean not null default true,
-  pay_with        uuid references public.enrollments(id) on delete set null, -- общая оплата с другим курсом ученика
+  pay_with        uuid references public.enrollments(id) on delete set null, -- оплачивается одной оплатой с другим курсом ученика
   created_at      timestamptz not null default now(),
   unique (student_id, class_id),
   constraint enrollments_pay_with_self check (pay_with is null or pay_with <> id)
@@ -85,6 +85,7 @@ create table public.payments (
   amount        int  not null default 0,
   lessons       int  not null,                       -- сколько уроков добавляет оплата
   note          text,
+  bundle_id     uuid,                                -- строки одной общей оплаты за несколько курсов
   created_by    uuid default auth.uid(),
   created_at    timestamptz not null default now()
 );
@@ -289,34 +290,28 @@ $$;
 -- =====================================================================
 --  Остаток уроков у каждого ученика (только для администратора)
 -- =====================================================================
--- остаток уроков: курсы с общей оплатой считаются вместе (account_id — общий «счёт»)
+-- остаток уроков: у каждого курса свой
 create view public.enrollment_stats with (security_invoker = true) as
-with acc as (
-  select id, coalesce(pay_with, id) as acc, initial_lessons from public.enrollments
-), init as (
-  select acc, sum(initial_lessons)::int as n from acc group by acc
-), pay as (
-  select a.acc, sum(p.lessons)::int as n, max(p.paid_at) as last_payment
-  from public.payments p join acc a on a.id = p.enrollment_id group by a.acc
-), used as (
-  select a.acc, count(*)::int as n
-  from public.attendance t
-  join public.lessons l on l.id = t.lesson_id
-  join acc a on a.id = t.enrollment_id
-  where l.status in ('done', 'cancelled') and (t.present or t.decision = 'burned')
-  group by a.acc
-)
 select
-  a.id as enrollment_id,
-  i.n + coalesce(p.n, 0)                     as paid_lessons,
-  coalesce(u.n, 0)                           as used_lessons,
-  i.n + coalesce(p.n, 0) - coalesce(u.n, 0)  as remaining,
+  e.id as enrollment_id,
+  e.initial_lessons + coalesce(p.paid_lessons, 0) as paid_lessons,
+  coalesce(u.used_lessons, 0)                     as used_lessons,
+  e.initial_lessons + coalesce(p.paid_lessons, 0) - coalesce(u.used_lessons, 0) as remaining,
   p.last_payment,
-  a.acc                                      as account_id
-from acc a
-join init i on i.acc = a.acc
-left join pay p on p.acc = a.acc
-left join used u on u.acc = a.acc;
+  coalesce(e.pay_with, e.id)                      as account_id
+from public.enrollments e
+left join (
+  select enrollment_id, sum(lessons)::int as paid_lessons, max(paid_at) as last_payment
+  from public.payments group by enrollment_id
+) p on p.enrollment_id = e.id
+left join (
+  select a.enrollment_id, count(*)::int as used_lessons
+  from public.attendance a
+  join public.lessons l on l.id = a.lesson_id
+  where l.status in ('done', 'cancelled') and (a.present or a.decision = 'burned')
+  group by a.enrollment_id
+) u on u.enrollment_id = e.id;
+create index payments_bundle_idx on public.payments (bundle_id);
 
 -- =====================================================================
 --  Права доступа (Row Level Security)
