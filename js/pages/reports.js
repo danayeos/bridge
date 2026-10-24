@@ -20,11 +20,26 @@
     const sal = Logic.salaries(lessons).sort((a, b) => b.total - a.total);
     const salTotal = sal.reduce((s, x) => s + x.total, 0);
 
+    // за какие курсы оплата: сопровождение одной оплатой покрывает все связанные курсы («IELTS + SAT»)
+    const payRoot = (e) => (e.pay_with && enrById[e.pay_with] ? e.pay_with : e.id);
+    const coursesOf = (p) => {
+      const e = enrById[p.enrollment_id];
+      if (!e) return ['Другое'];
+      const list = e.plan === 'support' ? enrollments.filter((x) => x.plan === 'support' && payRoot(x) === payRoot(e)) : [e];
+      return [...new Set(list.map((x) => courseName[classById[x.class_id]?.course_id] || 'Другое'))];
+    };
+    const payLabel = (p) => {
+      const e = enrById[p.enrollment_id] || {};
+      const names = coursesOf(p);
+      if (e.plan === 'support') return `Сопровождение: ${names.join(' + ')}`;
+      const c = classById[e.class_id];
+      return c?.kind === 'group' ? `${names[0]} — ${c.name}` : `${names[0]} (индив.)`;
+    };
+
     // доход по курсам
     const byCourse = {};
     for (const p of pays) {
-      const c = classById[enrById[p.enrollment_id]?.class_id];
-      const k = courseName[c?.course_id] || 'Другое';
+      const k = coursesOf(p).join(' + ');
       byCourse[k] = (byCourse[k] || 0) + p.amount;
     }
 
@@ -66,11 +81,11 @@
       <section class="section">
         <h2>Все оплаты</h2>
         ${pays.length ? `<div class="table-wrap"><table class="table">
-          <thead><tr><th>Дата</th><th>Ученик</th><th>Занятие</th><th class="num">Уроков</th><th class="num">Сумма</th></tr></thead>
+          <thead><tr><th>Дата</th><th>Ученик</th><th>За что</th><th class="num">Уроков</th><th class="num">Сумма</th></tr></thead>
           <tbody>${pays.map((p) => {
             const e = enrById[p.enrollment_id] || {};
             return `<tr><td>${fmtDate(p.paid_at)}</td><td>${esc(studentName[e.student_id] || '')}</td>
-              <td>${esc(classById[e.class_id]?.name || '')}</td><td class="num">${p.lessons}</td><td class="num">${money(p.amount)}</td></tr>`;
+              <td>${esc(payLabel(p))}</td><td class="num">${p.lessons}</td><td class="num">${money(p.amount)}</td></tr>`;
           }).join('')}</tbody></table></div>` : empty('В этом месяце оплат не было')}
       </section>`;
 

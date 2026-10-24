@@ -133,19 +133,24 @@
             </div>
             ${statusBadge(e, ctx)}
           </div>
-          ${e.plan === 'support' ? `
+          ${e.plan === 'support' ? (() => {
+            // сопровождение одной оплатой за несколько курсов — оплата общая
+            const supPays = pays.filter((p) => together.some((x) => x.id === p.enrollment_id));
+            const paidAll = supPays.reduce((x, p) => x + p.amount, 0);
+            return `
           <div class="enr-nums">
             <div><span>Срок</span><b>${Logic.supportUntil(e) ? 'до ' + fmtDate(Logic.supportUntil(e)) : 'до конца'}</b></div>
-            <div><span>Оплачено</span><b>${money(ePays.reduce((x, p) => x + p.amount, 0))}</b></div>
+            <div><span>Оплачено${together.length > 1 ? ' (за все курсы)' : ''}</span><b>${money(paidAll)}</b></div>
             <div><span>Прошло уроков</span><b>${st.used_lessons}</b></div>
           </div>
           ${(() => {
             const until = Logic.supportUntil(e);
-            const paid = ePays.reduce((x, p) => x + p.amount, 0);
+            const paid = paidAll;
             if (until && until < Logic.today()) return `<div class="pay-hint warn">Срок сопровождения закончился ${fmtDate(until)}. Если продлили — измените срок в «Настройках».</div>`;
             if (!paid && e.package_price) return `<div class="pay-hint warn">Оплата за сопровождение (${money(e.package_price)}) ещё не записана — нажмите «Внести оплату».</div>`;
-            return `<div class="pay-hint">Всё оплачено — больше платить не нужно.</div>`;
-          })()}` : `
+            return `<div class="pay-hint">Всё оплачено${together.length > 1 ? ` (одной оплатой за ${together.map((x) => esc(ctx.courseOf(x))).join(' + ')})` : ''} — больше платить не нужно.</div>`;
+          })()}`;
+          })() : `
           ${(() => {
             // показываем текущий пакет («прошло 6 из 12»), а не сумму за всё время
             const pk = Logic.packProgress(st.remaining, e.package_lessons);
@@ -165,7 +170,7 @@
           })()}
           <div class="btn-group">
             ${e.plan !== 'support' ? `<button class="btn btn-sm btn-primary" data-pay="${e.id}">+ Оплата</button>`
-              : !ePays.length ? `<button class="btn btn-sm btn-primary" data-pay="${e.id}">Внести оплату</button>` : ''}
+              : !pays.some((p) => together.some((x) => x.id === p.enrollment_id)) ? `<button class="btn btn-sm btn-primary" data-pay="${e.id}">Внести оплату</button>` : ''}
             <button class="btn btn-sm" data-enr-edit="${e.id}">Настройки</button>
             <button class="btn btn-sm" data-cal="${e.class_id}">📅 Календарь</button>
           </div>
@@ -293,7 +298,8 @@
           <label><input type="radio" name="plan" value="support" ${e?.plan === 'support' ? 'checked' : ''}><span>Сопровождение</span></label>
         </div>
         <div data-plan="support">
-          <div class="field"><label>Цена сопровождения за всё, ₸</label>
+          <p class="pay-hint" data-sup-linked hidden>Сопровождение уже оплачено вместе с выбранным выше курсом — цену и оплату здесь указывать не нужно.</p>
+          <div class="field" data-sup-pay><label>Цена сопровождения за всё, ₸</label>
             <input type="number" name="sup_price" min="0" step="10000" value="${e?.plan === 'support' ? e.package_price || '' : ''}" placeholder="4000000"></div>
           <div class="field"><label>На какой срок</label>
             <div class="seg seg-wrap">${Logic.SUPPORT_TERMS.map(([v, t]) => `
@@ -301,7 +307,7 @@
             </div>
             <span class="muted small">Срок считается от «даты первого урока». Ученик платит один раз — напоминаний об оплате и долгов не будет.</span></div>
           ${e ? '' : `
-          <label class="check"><input type="checkbox" name="sup_paid" checked> Оплата получена — записать её сразу</label>
+          <label class="check" data-sup-pay><input type="checkbox" name="sup_paid" checked> Оплата получена — записать её сразу</label>
           <div class="field" data-sup-date><label>Дата оплаты</label><input type="date" name="sup_paid_at" value="${Logic.today()}"></div>`}
         </div>
         <div data-plan="package">
@@ -335,10 +341,14 @@
     const syncPlan = () => {
       const plan = form.querySelector('[name=plan]:checked').value;
       $$('[data-plan]', form).forEach((p) => p.hidden = p.dataset.plan !== plan);
+      // сопровождение, оплаченное вместе с другим курсом: цену и оплату не спрашиваем
+      const linked = plan === 'support' && !!payWith?.value;
+      $$('[data-sup-pay]', form).forEach((p) => p.hidden = linked);
+      $('[data-sup-linked]', form).hidden = !linked;
       const paid = form.querySelector('[name=sup_paid]');
-      if (paid) $('[data-sup-date]', form).hidden = !paid.checked;
+      if (paid) $('[data-sup-date]', form).hidden = linked || !paid.checked;
     };
-    $$('[name=plan], [name=sup_paid]', form).forEach((r) => r.onchange = syncPlan);
+    $$('[name=plan], [name=sup_paid], [name=pay_with]', form).forEach((r) => r.onchange = syncPlan);
     syncPlan();
     if (!e && !preset) {
       const sync = () => {
@@ -365,8 +375,9 @@
           initial_lessons: f.initial_lessons || 0,
         };
         if (f.plan === 'support') {
-          if (!f.sup_price && f.sup_price !== 0) throw new Error('Укажите цену сопровождения');
-          enr.package_price = f.sup_price;
+          const linked = !!f.pay_with;
+          if (!linked && !f.sup_price && f.sup_price !== 0) throw new Error('Укажите цену сопровождения');
+          enr.package_price = linked ? 0 : f.sup_price;
           enr.package_lessons = Logic.encodeSupport(f.sup_months); // срок сопровождения (см. Logic.supportMonths)
           enr.initial_lessons = 0;
         }
@@ -386,7 +397,7 @@
           }
           const ne = await DB.insert('enrollments', { ...enr, student_id: s.id, class_id: classId });
           // сопровождение оплачивается один раз — сразу записываем оплату
-          if (f.plan === 'support' && f.sup_paid && enr.package_price) {
+          if (f.plan === 'support' && f.sup_paid && enr.package_price && !f.pay_with) {
             await DB.insert('payments', { enrollment_id: ne.id, amount: enr.package_price, lessons: 0, paid_at: f.sup_paid_at || Logic.today(), note: 'Сопровождение' });
           }
           if (f.backfill) filled = await backfill(ne.id, classId, enr.start_date);
@@ -435,10 +446,12 @@
     const old = p?.bundle_id ? DB.check(await DB.sb.from('payments').select('*').eq('bundle_id', p.bundle_id)) : p ? [p] : [];
     const members = p ? old.map((x) => enrById[x.enrollment_id]).filter(Boolean)
       : [e, ...enrollments.filter((x) => x.id !== e.id && root(x) === root(e) && x.active)];
+    // сопровождение за несколько курсов — одна строка оплаты (уроки там не считаются)
+    if (!p && e.plan === 'support') members.splice(1);
     const multi = members.length > 1;
     const oldOf = (x) => old.find((o) => o.enrollment_id === x.id);
     const title = (x) => { const k = classById[x.class_id] || {}; return `${courseName[k.course_id] || ''}${k.kind === 'group' ? ' — ' + k.name : ''}`; };
-    const priceSum = members.reduce((n, x) => n + (x.plan === 'support' && multi ? 0 : x.package_price || 0), 0);
+    const priceSum = members.reduce((n, x) => n + (x.package_price || 0), 0);
 
     const m = modal(p ? 'Изменить оплату' : 'Новая оплата', `
       <form class="form">
