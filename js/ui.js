@@ -60,7 +60,8 @@
   }
 
   // Модальное окно. body — HTML. Возвращает {el, close}.
-  function modal(title, body, { wide = false } = {}) {
+  // onClose — вызывается, когда окно закрыли
+  function modal(title, body, { wide = false, onClose = null } = {}) {
     const wrap = document.createElement('div');
     wrap.className = 'modal-wrap';
     wrap.innerHTML = `
@@ -72,7 +73,7 @@
         <div class="modal-body">${body}</div>
       </div>`;
     document.body.appendChild(wrap);
-    const close = () => wrap.remove();
+    const close = () => { if (!wrap.isConnected) return; wrap.remove(); onClose && onClose(); };
     wrap.addEventListener('click', (e) => {
       if (e.target === wrap || e.target.closest('[data-close]')) close();
     });

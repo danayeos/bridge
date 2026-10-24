@@ -18,10 +18,7 @@
     root.innerHTML = `
       <div class="page-head">
         <h1>Группы и расписание</h1>
-        <div class="btn-group">
-          <button class="btn" id="bulk">Внести прошлые уроки</button>
-          <button class="btn btn-primary" id="add-cls">+ Новая группа</button>
-        </div>
+        <button class="btn btn-primary" id="add-cls">+ Новая группа</button>
       </div>
       <div class="tabs">
         <button class="tab ${tab === 'group' ? 'active' : ''}" data-tab="group">Группы</button>
@@ -49,7 +46,6 @@
       </div>`;
 
     $$('[data-tab]', root).forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(root); });
-    $('#bulk', root).onclick = () => bulkMark(null);
     const delOrphans = $('#del-orphans', root);
     if (delOrphans) delOrphans.onclick = async () => {
       if (!(await confirmBox(`Удалить ${orphans.length} занятий без учеников вместе с их уроками?`))) return;
@@ -59,7 +55,8 @@
       });
     };
     $('#add-cls', root).onclick = () => editClass(null, ctx, () => render(root));
-    $$('[data-edit]', root).forEach((b) => b.onclick = () => editClass(classes.find((c) => c.id === b.dataset.edit), ctx, () => render(root)));
+    // нажали на группу — сразу таблица посещаемости, внизу «Настройки» и «Календарь»
+    $$('[data-edit]', root).forEach((b) => b.onclick = () => GroupsPage.openMatrix(b.dataset.edit, true, () => render(root)));
   }
 
   // Поля занятия (используются и в карточке ученика)
@@ -174,18 +171,13 @@
   }
 
   function editClass(c, ctx, done) {
-    const m = modal(c ? c.name : 'Новая группа', `
+    const m = modal(c ? `Настройки · ${c.name}` : 'Новая группа', `
       <form class="form">
-        ${c && c.kind === 'group' ? `<div class="add-st-bar"><button type="button" class="btn btn-primary btn-sm" data-add-st>+ Добавить ученика в группу</button>
-          <span class="muted small">можно выбрать того, кто уже учится в другой группе</span></div>` : ''}
         ${classFields(c, ctx, { individual: c?.kind === 'individual' })}
         ${c ? `<label class="check"><input type="checkbox" name="cls_active" ${c.active ? 'checked' : ''}> Занятие идёт (снимите, чтобы убрать в архив)</label>` : ''}
         ${c ? `<p class="muted small">Новая ставка учителю действует для новых отметок. Старые уроки можно поправить в «Журнале».</p>` : ''}
         <div class="form-actions">
           ${c ? `<button type="button" class="btn btn-danger" data-del>Удалить</button>` : ''}
-          ${c ? `<button type="button" class="btn" data-cal>📅 Календарь</button>` : ''}
-          ${c ? `<button type="button" class="btn" data-matrix>📊 Посещаемость</button>` : ''}
-          ${c ? `<button type="button" class="btn" data-bulk>Прошлые уроки</button>` : ''}
           <button type="button" class="btn" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить</button>
         </div>
@@ -201,14 +193,6 @@
       $$('[name=cls_rate_mode]', form).forEach((r) => r.onchange = () =>
         $$('[data-rate-hint]', form).forEach((h) => h.hidden = h.dataset.rateHint !== r.value));
     }
-    const addSt = $('[data-add-st]', m.el);
-    if (addSt) addSt.onclick = () => { m.close(); StudentsPage.addToClass(c.id, done); };
-    const matrix = $('[data-matrix]', m.el);
-    if (matrix) matrix.onclick = () => { m.close(); GroupsPage.openMatrix(c.id, true); };
-    const cal = $('[data-cal]', m.el);
-    if (cal) cal.onclick = () => { m.close(); CalendarPage.open(c.id, done); };
-    const bulk = $('[data-bulk]', m.el);
-    if (bulk) bulk.onclick = () => { m.close(); bulkMark(c.id, done); };
     form.onsubmit = (ev) => {
       ev.preventDefault();
       busy(form.querySelector('[type=submit]'), async () => {
@@ -247,94 +231,5 @@
     };
   }
 
-  // ---------- Внести прошлые уроки разом (для старых данных) ----------
-  // onlyClassId — только одно занятие; иначе все активные
-  async function bulkMark(onlyClassId, done) {
-    const [classes, roster] = await Promise.all([DB.classes(), DB.roster()]);
-    const list = classes.filter((c) => c.active && (!onlyClassId || c.id === onlyClassId));
-    const starts = Logic.classStarts(roster);
-    const yesterday = Logic.addDays(Logic.today(), -1);
-    const earliest = list.map((c) => starts[c.id]).filter(Boolean).sort()[0] || Logic.addDays(yesterday, -30);
-    let from = earliest < yesterday ? earliest : yesterday;
-    let to = yesterday;
-
-    const m = modal(onlyClassId ? `Прошлые уроки · ${list[0]?.name || ''}` : 'Внести прошлые уроки', `
-      <div class="form">
-        <p class="muted small">Отметьте уроки, которые прошли. Все ученики будут отмечены как «был».
-          Пропуски, переносы и отмены потом поправьте в «Расписании» (выберите дату) или в «Журнале».</p>
-        <div class="row2">
-          <div class="field"><label>С</label><input type="date" name="from" value="${from}"></div>
-          <div class="field"><label>По</label><input type="date" name="to" value="${to}"></div>
-        </div>
-        <div data-list><div class="loading">Загрузка…</div></div>
-        <div class="form-actions">
-          <button type="button" class="btn" data-close>Закрыть</button>
-          <button type="button" class="btn btn-primary" data-save disabled>Сохранить</button>
-        </div>
-      </div>`, { wide: true });
-
-    let slots = [];
-    const box = $('[data-list]', m.el);
-    const saveBtn = $('[data-save]', m.el);
-    const classById = Object.fromEntries(classes.map((c) => [c.id, c]));
-
-    async function load() {
-      box.innerHTML = `<div class="loading">Загрузка…</div>`;
-      if (from > to) { box.innerHTML = empty('Дата «с» позже даты «по»'); return; }
-      const lessons = await DB.lessons(from, to);
-      slots = [];
-      for (let d = from; d <= to; d = Logic.addDays(d, 1)) {
-        for (const s of Logic.lessonsForDate(d, list, lessons.filter((l) => l.date === d), starts)) {
-          if (!classById[s.class_id] || (onlyClassId && s.class_id !== onlyClassId)) continue;
-          slots.push({ ...s, students: Logic.rosterFor(s.class_id, d, roster) });
-        }
-      }
-      const todo = slots.filter((s) => !s.lesson);
-      saveBtn.disabled = !todo.length;
-      saveBtn.textContent = `Отметить как прошедшие (${todo.length})`;
-      if (!slots.length) { box.innerHTML = empty('В этот период по расписанию уроков нет. Проверьте расписание и дату начала у учеников.'); return; }
-      box.innerHTML = `
-        ${todo.length ? `<label class="check"><input type="checkbox" data-all checked> <b>Выбрать все</b></label>` : ''}
-        <div class="bulk-list">${slots.map((s, i) => `
-          <label class="bulk-row ${s.lesson ? 'is-off' : ''}">
-            <input type="checkbox" data-i="${i}" ${s.lesson ? 'disabled' : 'checked'}>
-            <span class="nowrap">${UI.fmtShort(s.date)} ${esc(s.time)}</span>
-            <span>${esc(classById[s.class_id].name)}</span>
-            <span class="muted small">${s.lesson ? 'уже отмечен: ' + L.status[s.lesson.status].toLowerCase() : s.students.map((r) => esc(r.student_name)).join(', ') || 'нет учеников'}</span>
-          </label>`).join('')}</div>`;
-      const all = $('[data-all]', box);
-      const count = () => {
-        const n = $$('[data-i]:checked', box).length;
-        saveBtn.textContent = `Отметить как прошедшие (${n})`;
-        saveBtn.disabled = !n;
-      };
-      if (all) all.onchange = () => { $$('[data-i]:not(:disabled)', box).forEach((c) => c.checked = all.checked); count(); };
-      $$('[data-i]', box).forEach((c) => c.onchange = count);
-    }
-
-    $('[name=from]', m.el).onchange = (e) => { if (e.target.value) { from = e.target.value; load(); } };
-    $('[name=to]', m.el).onchange = (e) => { if (e.target.value) { to = e.target.value; load(); } };
-    saveBtn.onclick = async () => {
-      await busy(saveBtn, async () => {
-        const chosen = $$('[data-i]:checked', box).map((c) => slots[Number(c.dataset.i)]).filter((s) => !s.lesson);
-        for (let k = 0; k < chosen.length; k += 200) {
-          const part = chosen.slice(k, k + 200);
-          const rows = DB.check(await DB.sb.from('lessons')
-            .insert(part.map((s) => ({ class_id: s.class_id, date: s.date, time: s.time, status: 'done' })))
-            .select('id, class_id, date, time'));
-          const att = [];
-          for (const l of rows) {
-            for (const r of Logic.rosterFor(l.class_id, l.date, roster)) att.push({ lesson_id: l.id, enrollment_id: r.enrollment_id, present: true });
-          }
-          if (att.length) DB.check(await DB.sb.from('attendance').insert(att));
-        }
-        toast(`Отмечено уроков: ${chosen.length}`);
-        done && done();
-      });
-      load();
-    };
-    load();
-  }
-
-  window.ClassesPage = { render, classFields, bindSchedule, readClass, bulkMark, editClass };
+  window.ClassesPage = { render, classFields, bindSchedule, readClass, editClass };
 })();

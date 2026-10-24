@@ -146,8 +146,6 @@
             <button class="btn btn-sm btn-primary" data-pay="${e.id}">+ Оплата</button>
             <button class="btn btn-sm" data-enr-edit="${e.id}">Настройки</button>
             <button class="btn btn-sm" data-cal="${e.class_id}">📅 Календарь</button>
-            <button class="btn btn-sm" data-sched="${e.class_id}">Расписание</button>
-            <button class="btn btn-sm" data-bulk="${e.class_id}">Прошлые уроки</button>
           </div>
           <details>
             <summary>Оплаты (${ePays.length})</summary>
@@ -175,9 +173,8 @@
       payModal(e, s, ctx.classById[e.class_id], reopen);
     });
     $$('[data-enr-edit]', m.el).forEach((b) => b.onclick = () => editEnrollment(ens.find((x) => x.id === b.dataset.enrEdit), s, ctx, reopen));
-    $$('[data-cal]', m.el).forEach((b) => b.onclick = () => CalendarPage.open(b.dataset.cal, onChange));
-    $$('[data-sched]', m.el).forEach((b) => b.onclick = () => ClassesPage.editClass(ctx.classById[b.dataset.sched], ctx, reopen));
-    $$('[data-bulk]', m.el).forEach((b) => b.onclick = () => { m.close(); ClassesPage.bulkMark(b.dataset.bulk, onChange); });
+    // календарь: после закрытия карточка открывается заново с новыми цифрами
+    $$('[data-cal]', m.el).forEach((b) => b.onclick = () => { m.close(); CalendarPage.open(b.dataset.cal, onChange, { onClose: () => openStudent(id, onChange) }); });
     $$('[data-edit-pay]', m.el).forEach((b) => b.onclick = () => {
       const p = pays.find((x) => x.id === b.dataset.editPay);
       const e = ens.find((x) => x.id === p.enrollment_id);
@@ -261,6 +258,7 @@
 
         <div class="field"><label>Дата первого урока</label><input type="date" name="start_date" value="${e?.start_date || Logic.today()}">
           <span class="muted small">С этой даты ученик появляется на уроках и уроки начинают считаться.</span></div>
+        <label class="check"><input type="checkbox" name="backfill" checked> Уроки, которые уже отмечены «прошёл» с этой даты, засчитать ученику («был»)</label>
         <h4>Оплата</h4>
         ${isMain ? `<p class="muted small">💳 С этим курсом оплачиваются вместе: ${ctx.enrollments.filter((x) => x.pay_with === e.id).map((x) => esc(ctx.courseOf(x))).join(', ')}.
           При «+ Оплата» сразу вносится одна оплата за все эти курсы.</p>` : payOpts.length ? `
@@ -322,9 +320,11 @@
           initial_lessons: f.initial_lessons || 0,
         };
         if (payWith) enr.pay_with = f.pay_with || null;
+        let filled = 0;
         if (e) {
           enr.active = f.active;
           await DB.update('enrollments', e.id, enr);
+          if (f.backfill) filled = await backfill(e.id, e.class_id, enr.start_date);
         } else {
           let classId = f.class_id;
           if (f.kind === 'individual') {
@@ -333,9 +333,10 @@
           } else if (!classId) {
             throw new Error('Выберите группу');
           }
-          await DB.insert('enrollments', { ...enr, student_id: s.id, class_id: classId });
+          const ne = await DB.insert('enrollments', { ...enr, student_id: s.id, class_id: classId });
+          if (f.backfill) filled = await backfill(ne.id, classId, enr.start_date);
         }
-        m.close(); toast('Сохранено'); done();
+        m.close(); toast(filled ? `Сохранено. Засчитано уже отмеченных уроков: ${filled}` : 'Сохранено'); done();
       });
     };
     const del = $('[data-del]', m.el);
@@ -351,6 +352,19 @@
         m.close(); toast('Удалено'); done();
       });
     };
+  }
+
+  // Ученик добавлен в занятие, где уроки уже отмечены: ставим ему «был» на прошедших уроках с даты первого урока
+  async function backfill(enrollmentId, classId, from) {
+    const t = Logic.today();
+    if (!from || from > t) return 0;
+    const ls = (await DB.lessons(from, t)).filter((l) => l.class_id === classId && l.status === 'done' &&
+      !(l.attendance || []).some((a) => a.enrollment_id === enrollmentId));
+    if (ls.length) {
+      DB.check(await DB.sb.from('attendance').upsert(ls.map((l) => ({ lesson_id: l.id, enrollment_id: enrollmentId, present: true })),
+        { onConflict: 'lesson_id,enrollment_id' }));
+    }
+    return ls.length;
   }
 
   // ---------- оплата ----------

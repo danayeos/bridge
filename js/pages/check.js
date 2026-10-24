@@ -116,12 +116,6 @@
         out.push({ level: 'err', group: 'Уроки', text: `${cTitle(c)}, ${when}: перенос на ${fmtShort(l.moved_to_date)}, но самого перенесённого урока нет.`,
           fix: { label: 'Создать перенесённый урок', run: async () => DB.insert('lessons', { class_id: c.id, date: l.moved_to_date, time: l.moved_to_time || l.time, status: 'planned', origin_id: l.id }) } });
       }
-      if (l.status === 'done') {
-        const should = Logic.rosterFor(c.id, l.date, d.roster);
-        if (should.length && !(l.attendance || []).length) {
-          out.push({ level: 'err', group: 'Уроки', text: `${cTitle(c)}, ${when}: урок отмечен «прошёл», но посещаемость пустая — урок никому не списался.`, open: openCal(c) });
-        }
-      }
       // посещаемость раньше даты первого урока ученика
       for (const a of l.attendance || []) {
         const e = enrById[a.enrollment_id];
@@ -134,6 +128,27 @@
             } } });
         }
       }
+    }
+
+    // урок отмечен «прошёл», а ученику не засчитан (ученика добавили в группу позже или «дата первого урока» стоит позже)
+    for (const e of d.enrollments.filter((x) => x.active && studentById[x.student_id]?.active)) {
+      const c = classById[e.class_id];
+      if (!c) continue;
+      const solo = c.kind === 'individual' && enrOfClass(c.id).length === 1;
+      const miss = d.lessons.filter((l) => l.class_id === c.id && l.status === 'done' && l.date <= d.t &&
+        (l.date >= e.start_date || (solo && !(l.attendance || []).length)) &&
+        !(l.attendance || []).some((a) => a.enrollment_id === e.id));
+      if (!miss.length) continue;
+      const first = miss.map((l) => l.date).sort()[0];
+      const early = first < e.start_date;
+      out.push({ level: 'err', group: 'Уроки',
+        text: `<b>${esc(sName(e))}</b>: в ${cTitle(c)} ${miss.length} ${lessonsWord(miss.length)} отмечены «прошёл», но ученику не засчитаны — поэтому «Прошло» меньше, чем на самом деле.${early ? ` Часть уроков раньше «даты первого урока» (${fmtShort(e.start_date)}).` : ''}`,
+        fix: { label: `Засчитать ${miss.length} ${lessonsWord(miss.length)} («был»)`, run: async () => {
+          if (early) await DB.update('enrollments', e.id, { start_date: first });
+          DB.check(await DB.sb.from('attendance').upsert(miss.map((l) => ({ lesson_id: l.id, enrollment_id: e.id, present: true })),
+            { onConflict: 'lesson_id,enrollment_id' }));
+        } },
+        open: openStudent(e.student_id) });
     }
 
     // неотмеченные прошлые уроки по занятиям

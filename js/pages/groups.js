@@ -33,7 +33,8 @@
   }
 
   // ---------- Таблица посещаемости ----------
-  async function openMatrix(classId, isAdmin) {
+  // onChange — обновить страницу под окном (после изменений)
+  async function openMatrix(classId, isAdmin, onChange) {
     const [classes, courses, roster] = await Promise.all([DB.classes(), DB.courses(), DB.roster()]);
     const c = classes.find((x) => x.id === classId);
     if (!c) return;
@@ -46,7 +47,22 @@
     };
     const starts = Logic.classStarts(roster);
     let month = Logic.today().slice(0, 7);
-    const m = modal(`Посещаемость · ${c.name}`, `<div data-mx><div class="loading">Загрузка…</div></div>`, { wide: true });
+    const m = modal(`Посещаемость · ${c.name}`, `<div data-mx><div class="loading">Загрузка…</div></div>
+      ${isAdmin ? `<div class="form-actions mx-actions">
+        ${c.kind === 'group' ? '<button class="btn btn-primary" data-add-st>+ Добавить ученика</button>' : ''}
+        <button class="btn" data-cal>📅 Календарь</button>
+        <button class="btn" data-settings>⚙ Настройки</button>
+      </div>` : ''}`, { wide: true });
+    if (isAdmin) {
+      const reopen = () => { onChange && onChange(); openMatrix(classId, isAdmin, onChange); };
+      $('[data-cal]', m.el).onclick = () => { m.close(); CalendarPage.open(classId, onChange); };
+      $('[data-settings]', m.el).onclick = () => {
+        const ctx = { classes, courses, teachers, courseName: info.courseName, teacherName: info.teacherName };
+        m.close(); ClassesPage.editClass(c, ctx, reopen);
+      };
+      const add = $('[data-add-st]', m.el);
+      if (add) add.onclick = () => { m.close(); StudentsPage.addToClass(classId, reopen); };
+    }
     m.el.querySelector('.modal').classList.add('modal-xwide');
     const box = $('[data-mx]', m.el);
 
@@ -119,7 +135,7 @@
         month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         draw();
       });
-      $$('[data-slot]', box).forEach((b) => b.onclick = () => TodayPage.openMark(slots[Number(b.dataset.slot)], info, draw));
+      $$('[data-slot]', box).forEach((b) => b.onclick = () => TodayPage.openMark(slots[Number(b.dataset.slot)], info, () => { onChange && onChange(); draw(); }));
     }
     draw();
   }

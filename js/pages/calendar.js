@@ -9,9 +9,11 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  function chip(s, idx) {
+  // pre — день раньше «даты первого урока» учеников: урок по расписанию показываем бледно, без «?»
+  function chip(s, idx, pre) {
     const l = s.lesson;
     const t = esc(s.time || '');
+    if (!l && pre) return `<button class="cal-chip cal-ghost cal-pre" data-slot="${idx}" title="До даты первого урока ученика — нажмите, если урок был">${t}</button>`;
     if (!l) {
       const past = s.date < Logic.today();
       return `<button class="cal-chip ${past ? 'cal-unmarked' : 'cal-ghost'}" data-slot="${idx}" title="${past ? 'Не отмечен' : 'По расписанию'}">${t}${past ? ' ?' : ''}</button>`;
@@ -31,7 +33,8 @@
     return `<button class="cal-chip cal-planned" data-slot="${idx}" title="Перенесён сюда">↶ ${t}</button>`;
   }
 
-  async function open(classId, onChange) {
+  // opts.onClose — что сделать, когда календарь закроют (например, обновить карточку ученика)
+  async function open(classId, onChange, opts = {}) {
     let month = Logic.today().slice(0, 7);
     const [classes, courses, teachers, roster] = await Promise.all([DB.classes(), DB.courses(), DB.teachers(), DB.roster()]);
     const c = classes.find((x) => x.id === classId);
@@ -45,7 +48,7 @@
     };
     const starts = Logic.classStarts(roster);
     const who = c.kind === 'individual' ? roster.filter((r) => r.class_id === c.id).map((r) => r.student_name) : [];
-    const m = modal(`Календарь · ${c.name}${who.length && !who.some((n) => c.name.toLowerCase().includes(n.toLowerCase().split(' ')[0])) ? ` (ученик: ${who.join(', ')})` : ''}`, `<div data-cal><div class="loading">Загрузка…</div></div>`, { wide: true });
+    const m = modal(`Календарь · ${c.name}${who.length && !who.some((n) => c.name.toLowerCase().includes(n.toLowerCase().split(' ')[0])) ? ` (ученик: ${who.join(', ')})` : ''}`, `<div data-cal><div class="loading">Загрузка…</div></div>`, { wide: true, onClose: opts.onClose });
     const box = $('[data-cal]', m.el);
 
     let lastSlots = [];
@@ -62,15 +65,17 @@
       let cells = '';
       for (let d = gridStart; d <= gridEnd; d = Logic.addDays(d, 1)) {
         const inMonth = d >= from && d <= to;
-        const daySlots = inMonth ? Logic.lessonsForDate(d, [c], lessons.filter((l) => l.date === d), starts) : [];
+        // расписание показываем всегда, даже раньше даты первого урока, — чтобы можно было отметить старые уроки
+        const daySlots = inMonth ? Logic.lessonsForDate(d, [c], lessons.filter((l) => l.date === d)) : [];
+        const pre = !starts[c.id] || d < starts[c.id];
         let chips = '';
         for (const s of daySlots) {
           const l = s.lesson;
-          if (!l) { if (d < t) cnt.unmarked++; }
+          if (!l) { if (d < t && !pre) cnt.unmarked++; }
           else if (l.status === 'cancelled' && !l.caused_by) cnt.none++;
           else if (cnt[l.status] !== undefined) cnt[l.status]++;
           slots.push(s);
-          chips += chip(s, slots.length - 1);
+          chips += chip(s, slots.length - 1, pre);
         }
         cells += `
           <div class="cal-cell ${inMonth ? '' : 'cal-out'} ${d === t ? 'cal-today' : ''}">
@@ -99,7 +104,7 @@
           ${cells}
         </div>
         <p class="muted small">Нажмите на урок, чтобы отметить или изменить. «+» — добавить урок в день, которого нет в расписании.
-          Пунктир — урок по расписанию, ещё не отмечен; если его на самом деле не было, выберите «Урока не было».</p>`;
+          Пунктир — урок по расписанию, ещё не отмечен; если его на самом деле не было, выберите «Урока не было». Бледные — дни до «даты первого урока» ученика: их можно отметить, если урок был.</p>`;
 
       $$('[data-month]', box).forEach((b) => b.onclick = () => { month = shiftMonth(month, Number(b.dataset.month)); draw(); });
       $$('[data-slot]', box).forEach((b) => b.onclick = () => TodayPage.openMark(slots[Number(b.dataset.slot)], info, after));

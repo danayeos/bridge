@@ -119,8 +119,14 @@
   function openMark(slot, info, done) {
     const c = info.classById[slot.class_id] || {};
     const l = slot.lesson;
-    const students = Logic.rosterFor(slot.class_id, slot.date, info.roster);
     const att = l && l.attendance ? Object.fromEntries(l.attendance.map((a) => [a.enrollment_id, a.present])) : {};
+    const inClass = info.roster.filter((r) => r.class_id === slot.class_id);
+    // кто должен быть на уроке + кто уже отмечен на нём (даже если потом перестал ходить — чтобы не стереть историю)
+    const students = inClass.filter((r) => (r.active && r.start_date <= slot.date) || r.enrollment_id in att);
+    // ученики, у которых «дата первого урока» позже этого урока (админ может отметить и их — дата сдвинется)
+    const later = info.isAdmin ? inClass.filter((r) => r.active && r.start_date > slot.date && !(r.enrollment_id in att)) : [];
+    // в индивидуальном занятии единственный ученик — точно был на своём уроке
+    const laterOn = c.kind === 'individual' && !students.length;
     const initial = !l || l.status === 'planned' ? 'done' : l.status === 'cancelled' && !l.caused_by ? 'none' : l.status;
 
     const reasonBlock = (prefix) => `
@@ -157,7 +163,17 @@
                   <span class="att-box"></span>
                   <span>${esc(r.student_name)}</span>
                 </label>`).join('')}
-            </div>` : `<div class="muted">В этом занятии нет учеников</div>`}
+            </div>` : later.length ? '' : `<div class="muted">В этом занятии нет учеников</div>`}
+            ${later.length ? `
+            <div class="later-box">
+              <div class="muted small">По «дате первого урока» ещё не учились в этот день. Отметьте, если на самом деле были, — дата первого урока сдвинется на ${fmtShort(slot.date)}:</div>
+              <div class="att-list">${later.map((r) => `
+                <label class="att-item">
+                  <input type="checkbox" name="later_${r.enrollment_id}" ${laterOn ? 'checked' : ''}>
+                  <span class="att-box"></span>
+                  <span>${esc(r.student_name)} <span class="muted small">(с ${fmtShort(r.start_date)})</span></span>
+                </label>`).join('')}</div>
+            </div>` : ''}
           </div>
         </div>
 
@@ -214,6 +230,11 @@
           data.status = 'cancelled';
         } else if (f.status === 'done') {
           data.attendance = students.map((r) => ({ enrollment_id: r.enrollment_id, present: !!f['att_' + r.enrollment_id] }));
+          for (const r of later.filter((x) => f['later_' + x.enrollment_id])) {
+            await DB.update('enrollments', r.enrollment_id, { start_date: slot.date });
+            r.start_date = slot.date;
+            data.attendance.push({ enrollment_id: r.enrollment_id, present: true });
+          }
         } else {
           const p = f.status === 'rescheduled' ? 'r_' : 'c_';
           data.caused_by = f[p + 'caused_by'];
