@@ -52,6 +52,7 @@
 
     root.innerHTML = `
       <div class="page-head"><h1>Главная</h1><span class="muted">${fmtDate(t, true)}</span></div>
+      <div id="chk-banner"></div>
 
       <div class="tiles">
         <div class="tile"><div class="tile-label">Пора писать об оплате</div><div class="tile-value accent">${due.length}</div></div>
@@ -132,6 +133,11 @@
         }).join('')}</div>` : empty('Всё проверено')}
       </section>`;
 
+    // проверка данных — в фоне, чтобы не тормозить главную
+    CheckPage.count().then((n) => {
+      const el = root.querySelector('#chk-banner');
+      if (el && n) el.innerHTML = `<a class="alert alert-link" href="#/check">🩺 Проверка данных: найдено <b>${n}</b> ${n === 1 ? 'странность' : n < 5 ? 'странности' : 'странностей'} в базе — посмотреть и исправить →</a>`;
+    }).catch(() => {});
     $$('[data-pay]', root).forEach((b) => b.onclick = () => {
       const e = enrById[b.dataset.pay];
       StudentsPage.payModal(e, studentById[e.student_id], classById[e.class_id], () => render(root));

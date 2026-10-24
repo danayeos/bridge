@@ -470,3 +470,11 @@ details .table { margin-top: 6px; }
 .add-st-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--brand-soft); }
 .pick-list { width: 100%; min-height: 180px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
 .pick-list option { padding: 6px 8px; border-radius: 6px; }
+
+/* проверка данных */
+.alert-link { display: block; text-decoration: none; color: inherit; margin-bottom: 16px; }
+.alert-link:hover { border-color: var(--brand); }
+.chk-row { grid-template-columns: auto 1fr auto; align-items: start; }
+.chk-row .badge { margin-top: 2px; white-space: nowrap; }
+.chk-text { min-width: 0; line-height: 1.45; }
+@media (max-width: 700px) { .chk-row { grid-template-columns: 1fr; } .chk-row .badge { justify-self: start; } }

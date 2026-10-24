@@ -43,7 +43,9 @@ if (/[?&]demo/.test(location.search)) {
       T.lessons.push(l);
       T.attendance.push({ lesson_id: l.id, enrollment_id: e1.id, present: i !== 6, decision: null });
     }
-    T.lessons.push({ id: uid(), class_id: c1.id, teacher_id: t1.id, date: addDays(today, -5), time: '16:00', status: 'rescheduled', origin_id: null, rate: 7500, teacher_paid: null, fine: 0, reviewed: false, caused_by: 'teacher', reason: 'overslept', reason_text: null, moved_to_date: addDays(today, 1), moved_to_time: '17:00', comment: null });
+    const mv = uid();
+    T.lessons.push({ id: mv, class_id: c1.id, teacher_id: t1.id, date: addDays(today, -5), time: '16:00', status: 'rescheduled', origin_id: null, rate: 7500, teacher_paid: null, fine: 0, reviewed: false, caused_by: 'teacher', reason: 'overslept', reason_text: null, moved_to_date: addDays(today, 1), moved_to_time: '17:00', comment: null });
+    T.lessons.push({ id: uid(), class_id: c1.id, teacher_id: t1.id, date: addDays(today, 1), time: '17:00', status: 'planned', origin_id: mv, rate: 7500, teacher_paid: null, fine: 0, reviewed: false, caused_by: null, reason: null, reason_text: null, moved_to_date: null, moved_to_time: null, comment: null });
 
     // ---------- query builder ----------
     const views = {

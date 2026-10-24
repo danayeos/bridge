@@ -70,7 +70,7 @@
     const past = (c?.schedule || []).filter((s) => s.to && s.to < t);
     return `
       <div class="field"><label>${individual ? 'Название <span class="muted small">(необязательно)</span>' : 'Название группы'}</label>
-        <input name="cls_name" value="${esc(c?.name || '')}" ${individual ? 'placeholder="Например: Ясина — математика"' : 'placeholder="Например: IELTS вечер" required'}></div>
+        <input name="cls_name" autocomplete="off" value="${esc(c?.name || '')}" ${individual ? 'placeholder="Например: Ясина — математика"' : 'placeholder="Например: IELTS вечер" required'}></div>
       <div class="row2">
         <div class="field"><label>Курс</label>
           <select name="cls_course" required>${options(ctx.courses.map((x) => [x.id, x.name]), c?.course_id, { empty: 'Выберите…' })}</select></div>

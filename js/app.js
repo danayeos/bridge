@@ -11,6 +11,7 @@
     ['teachers', 'Учителя', '🧑‍🏫', (r, a) => TeachersPage.render(r, a)],
     ['journal', 'Журнал', '📒', (r) => JournalPage.render(r)],
     ['reports', 'Деньги', '💰', (r) => ReportsPage.render(r)],
+    ['check', 'Проверка', '🩺', (r) => CheckPage.render(r), 'hidden'],
   ];
   const TEACHER_NAV = [
     ['today', 'Мои уроки', '✅', (r, a) => TodayPage.render(r, a)],
@@ -74,7 +75,7 @@
         ${window.BRIDGE_DEMO ? `<div class="demo-bar">Демо-режим: данные выдуманные и пропадут после обновления страницы. Смотреть как:
           <a href="?demo&as=admin">Администратор</a> · <a href="?demo&as=teacher">Учитель</a></div>` : ''}
         <main id="page"></main>
-        ${nav().length > 1 ? `<nav class="bottom-nav">${nav().map(([id, label, icon]) => `<a href="#/${id}" data-nav="${id}"><span class="nav-ico">${icon}</span><span>${label}</span></a>`).join('')}</nav>` : ''}
+        ${nav().filter((n) => !n[4]).length > 1 ? `<nav class="bottom-nav">${nav().filter((n) => !n[4]).map(([id, label, icon]) => `<a href="#/${id}" data-nav="${id}"><span class="nav-ico">${icon}</span><span>${label}</span></a>`).join('')}</nav>` : ''}
       </div>
       <div id="toasts"></div>`;
     $('#logout').onclick = $('#logout2').onclick = () => DB.signOut();

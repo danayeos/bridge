@@ -44,7 +44,8 @@
       isAdmin: true,
     };
     const starts = Logic.classStarts(roster);
-    const m = modal(`Календарь · ${c.name}`, `<div data-cal><div class="loading">Загрузка…</div></div>`, { wide: true });
+    const who = c.kind === 'individual' ? roster.filter((r) => r.class_id === c.id).map((r) => r.student_name) : [];
+    const m = modal(`Календарь · ${c.name}${who.length && !who.some((n) => c.name.toLowerCase().includes(n.toLowerCase().split(' ')[0])) ? ` (ученик: ${who.join(', ')})` : ''}`, `<div data-cal><div class="loading">Загрузка…</div></div>`, { wide: true });
     const box = $('[data-cal]', m.el);
 
     let lastSlots = [];
