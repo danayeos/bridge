@@ -24,7 +24,7 @@
     const statBy = Object.fromEntries(d.stats.map((s) => [s.enrollment_id, s]));
     const enrOfClass = (cid) => d.enrollments.filter((e) => e.class_id === cid);
     const sName = (e) => studentById[e.student_id]?.full_name || '?';
-    const cTitle = (c) => `«${c.name}»${c.kind === 'individual' ? ' (индив.)' : ''}`;
+    const cTitle = (c) => `«${c.name}»${c.kind === 'individual' ? ' (индив.)' : c.kind === 'intensive' ? ' (интенсив)' : ''}`;
     const openClass = (c) => ({ label: 'Открыть занятие', run: (done) => ClassesPage.editClass(c, ctxFor(d), done) });
     const openCal = (c) => ({ label: '📅 Календарь', run: (done) => CalendarPage.open(c.id, done) });
     const openStudent = (sid) => ({ label: 'Открыть ученика', run: (done) => StudentsPage.openStudent(sid, done) });
@@ -63,6 +63,10 @@
       }
       if (!c.teacher_id) out.push({ level: 'warn', group: 'Занятия', text: `У занятия ${cTitle(c)} не выбран учитель — никто не сможет отметить уроки, зарплата не посчитается.`, open: openClass(c) });
       if (!c.teacher_rate) out.push({ level: 'info', group: 'Занятия', text: `У занятия ${cTitle(c)} не указана оплата учителю за урок (0 ₸).`, open: openClass(c) });
+    }
+    for (const c of d.classes.filter((x) => x.active && x.kind === 'intensive' && (!x.end_date || x.end_date >= d.t))) {
+      if (!c.teacher_id) out.push({ level: 'warn', group: 'Занятия', text: `У интенсива ${cTitle(c)} не выбран учитель.` });
+      if (!Logic.currentSchedule(c.schedule, d.t).length) out.push({ level: 'warn', group: 'Занятия', text: `У интенсива ${cTitle(c)} нет расписания.` });
     }
     for (const c of d.classes.filter((x) => !x.active)) {
       const still = enrOfClass(c.id).filter((e) => e.active && studentById[e.student_id]?.active);
@@ -152,10 +156,11 @@
     }
 
     // неотмеченные прошлые уроки по занятиям
-    for (const c of d.classes.filter((x) => x.active && starts[x.id])) {
+    for (const c of d.classes.filter((x) => x.active && (x.kind === 'intensive' ? x.start_date : starts[x.id]))) {
       const ls = d.lessons.filter((l) => l.class_id === c.id);
       let n = 0;
-      for (let day = starts[c.id] > Logic.addDays(d.t, -365) ? starts[c.id] : Logic.addDays(d.t, -365); day < d.t; day = Logic.addDays(day, 1)) {
+      const st0 = c.kind === 'intensive' ? c.start_date : starts[c.id];
+      for (let day = st0 > Logic.addDays(d.t, -365) ? st0 : Logic.addDays(d.t, -365); day < d.t; day = Logic.addDays(day, 1)) {
         n += Logic.lessonsForDate(day, [c], ls.filter((l) => l.date === day), starts).filter((s) => !s.lesson || s.lesson.status === 'planned').length;
       }
       if (n) out.push({ level: 'info', group: 'Неотмеченные уроки', text: `${cTitle(c)}: ${n} ${lessonsWord(n)} в прошлом не отмечены. Отметьте «прошёл» или «урока не было».`, open: openCal(c) });

@@ -91,7 +91,7 @@
             <div class="wk-item wk-${x.c.mode} ${x.off ? 'wk-off' : ''} ${x.c.teacher_id === myId ? 'wk-mine' : ''} ${x.zoom || x.twice ? 'wk-clash' : ''} ${now ? 'wk-now' : ''}">
               <div class="wk-time">${esc(x.time)}–${fmtMin(x.end)} <span class="wk-mode">${x.c.mode === 'online' ? '🎥 онлайн' : '🏫 офлайн'}</span></div>
               <div class="wk-name">${esc(x.c.name)}</div>
-              <div class="wk-meta">${esc(x.c.teacher_name || 'без учителя')} · ${esc(courseName[x.c.course_id] || '')}${x.c.kind === 'group' ? ` · ${x.c.students} уч.` : ''}</div>
+              <div class="wk-meta">${esc(x.c.teacher_name || 'без учителя')} · ${esc(courseName[x.c.course_id] || '')}${x.c.kind === 'group' ? ` · ${x.c.students} уч.` : x.c.kind === 'intensive' ? ' · ⚡ интенсив' : ''}</div>
               ${note ? `<div class="wk-note">${note}</div>` : ''}
               ${x.zoom ? `<div class="wk-warn">⚠ Zoom занят другим онлайн-уроком</div>` : ''}
               ${x.twice ? `<div class="wk-warn">⚠ У учителя два урока одновременно</div>` : ''}

@@ -7,14 +7,14 @@ if (/[?&]demo/.test(location.search)) {
   (function () {
     let n = 0;
     const uid = () => `00000000-0000-0000-0000-${String(++n).padStart(12, '0')}`;
-    const T = { profiles: [], teachers: [], courses: [], classes: [], students: [], enrollments: [], payments: [], lessons: [], attendance: [] };
+    const T = { profiles: [], teachers: [], courses: [], classes: [], students: [], enrollments: [], payments: [], lessons: [], attendance: [], intensive_sales: [] };
     window.__T = T;
     const ROLE = new URLSearchParams(location.search).get('as') === 'teacher' ? 'teacher' : 'admin';
     const ADMIN = uid(), TEACH = uid();
     T.profiles.push({ id: ADMIN, email: 'admin@bridge.kz', full_name: 'Админ', role: 'admin' });
     T.profiles.push({ id: TEACH, email: 'aigerim@bridge.kz', full_name: 'Айгерим', role: 'teacher' });
     T.profiles.push({ id: uid(), email: 'new@bridge.kz', full_name: 'Новый Учитель', role: 'pending' });
-    ['SAT', 'IELTS', 'NUET', 'Математика', 'Английский'].forEach((name, i) => T.courses.push({ id: i + 1, name }));
+    ['SAT', 'IELTS', 'NUET', 'Математика', 'Английский', 'Интенсив'].forEach((name, i) => T.courses.push({ id: i + 1, name }));
     const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
     const addDays = (s, k) => { const [y, m, d] = s.split('-').map(Number); const x = new Date(y, m - 1, d + k); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
     const wd = (s) => { const [y, m, d] = s.split('-').map(Number); const w = new Date(y, m - 1, d).getDay(); return w || 7; };
@@ -27,7 +27,13 @@ if (/[?&]demo/.test(location.search)) {
     const c2 = { id: uid(), name: 'IELTS вечер', course_id: 2, teacher_id: t1.id, kind: 'group', mode: 'online', teacher_rate: 5000, schedule: [{ day: wd(today), time: '18:00' }], active: true };
     const c3 = { id: uid(), name: 'SAT утро', course_id: 1, teacher_id: t2.id, kind: 'group', mode: 'offline', teacher_rate: 6000, schedule: [{ day: wd(addDays(today, -1)), time: '10:00' }], active: true };
     T.classes.push(c1, c2, c3);
-    T.classes.forEach((c) => { c.duration = c.kind === 'group' ? 90 : 60; c.rate_history = []; });
+    T.classes.forEach((c) => { c.duration = c.kind === 'group' ? 90 : 60; c.rate_history = []; c.start_date = null; c.end_date = null; });
+    // интенсив на 2 недели: 5 раз в неделю, учителю 8 000 за урок, 6 × Про и 5 × Стандарт
+    const c4 = { id: uid(), name: 'SAT интенсив', course_id: 6, teacher_id: t2.id, kind: 'intensive', mode: 'offline', teacher_rate: 8000,
+      schedule: [1, 2, 3, 4, 5].map((day) => ({ day, time: '12:00' })), active: true, duration: 120, rate_history: [],
+      start_date: addDays(today, -4), end_date: addDays(today, 9) };
+    T.classes.push(c4);
+    T.intensive_sales.push({ id: uid(), class_id: c4.id, name: 'Про', price: 75000, count: 6 }, { id: uid(), class_id: c4.id, name: 'Стандарт', price: 50000, count: 5 });
     const s = ['Ясина', 'Алихан Нуров', 'Мадина Ким', 'Тимур Абаев'].map((full_name) => ({ id: uid(), full_name, note: null, active: true }));
     T.students.push(...s);
     const e = (st, c, extra = {}) => { const r = { id: uid(), student_id: st.id, class_id: c.id, plan: 'package', package_lessons: 8, package_price: 80000, start_date: addDays(today, -60), initial_lessons: 0, active: true, ...extra }; T.enrollments.push(r); return r; };
@@ -157,7 +163,7 @@ if (/[?&]demo/.test(location.search)) {
               return { data: T.classes.map((c) => ({ id: c.id, name: c.name, course_id: c.course_id, teacher_id: c.teacher_id,
                 teacher_name: T.teachers.find((t) => t.id === c.teacher_id)?.full_name || null, kind: c.kind, mode: c.mode,
                 schedule: c.schedule, duration: c.duration || 60, active: c.active,
-                start_date: T.enrollments.filter((e) => e.class_id === c.id).map((e) => e.start_date).sort()[0] || null,
+                start_date: c.start_date || T.enrollments.filter((e) => e.class_id === c.id).map((e) => e.start_date).sort()[0] || null, end_date: c.end_date || null,
                 students: T.enrollments.filter((e) => e.class_id === c.id && e.active).length })), error: null };
             }
             if (name === 'school_lessons') {

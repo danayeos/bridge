@@ -1,4 +1,4 @@
-// Деньги за месяц: оплаты учеников и зарплаты учителей.
+// Деньги за месяц: оплаты учеников, интенсивы и зарплаты учителей.
 (function () {
   const { L, esc, $, money, fmtDate, fmtShort, empty } = UI;
   let month = null;
@@ -16,7 +16,24 @@
     const courseName = Object.fromEntries(courses.map((c) => [c.id, c.name]));
     const teacherName = Object.fromEntries(teachers.map((t) => [t.id, t.full_name]));
 
-    const income = pays.reduce((s, p) => s + p.amount, 0);
+    const payIncome = pays.reduce((s, p) => s + p.amount, 0);
+    // интенсивы считаем в месяце, когда они начались
+    let sales = [];
+    try { sales = await DB.sales(); } catch { /* база ещё без интенсивов */ }
+    const intensives = classes.filter((c) => c.kind === 'intensive' && c.start_date >= from && c.start_date <= to);
+    const intLessons = intensives.length
+      ? (await DB.lessons(intensives.map((c) => c.start_date).sort()[0], intensives.map((c) => c.end_date || c.start_date).sort().pop()))
+        .filter((l) => l.status === 'done' && intensives.some((c) => c.id === l.class_id))
+      : [];
+    const intRows = intensives.map((c) => {
+      const s = sales.filter((x) => x.class_id === c.id);
+      const done = intLessons.filter((l) => l.class_id === c.id);
+      const planned = ClassesPage.intensiveLessonCount(c);
+      return { c, s, income: ClassesPage.salesTotal(s), people: s.reduce((n, x) => n + x.count, 0),
+        done: done.length, paid: done.reduce((n, l) => n + (l.rate || 0), 0), planned, plannedPay: planned * (c.teacher_rate || 0) };
+    });
+    const intIncome = intRows.reduce((n, r) => n + r.income, 0);
+    const income = payIncome + intIncome;
     const sal = Logic.salaries(lessons).sort((a, b) => b.total - a.total);
     const salTotal = sal.reduce((s, x) => s + x.total, 0);
 
@@ -42,6 +59,7 @@
       const k = coursesOf(p).join(' + ');
       byCourse[k] = (byCourse[k] || 0) + p.amount;
     }
+    for (const r of intRows) if (r.income) byCourse[`⚡ ${r.c.name}`] = r.income;
 
     root.innerHTML = `
       <div class="page-head">
@@ -50,7 +68,8 @@
       </div>
 
       <div class="tiles">
-        <div class="tile"><div class="tile-label">Оплаты учеников</div><div class="tile-value">${money(income)}</div><div class="muted small">${pays.length} оплат</div></div>
+        <div class="tile"><div class="tile-label">Оплаты учеников</div><div class="tile-value">${money(payIncome)}</div><div class="muted small">${pays.length} оплат</div></div>
+        ${intRows.length ? `<div class="tile"><div class="tile-label">Интенсивы</div><div class="tile-value">${money(intIncome)}</div><div class="muted small">${intRows.reduce((n, r) => n + r.people, 0)} чел.</div></div>` : ''}
         <div class="tile"><div class="tile-label">Зарплаты учителей</div><div class="tile-value">${money(salTotal)}</div></div>
         <div class="tile"><div class="tile-label">Разница</div><div class="tile-value accent">${money(income - salTotal)}</div></div>
       </div>
@@ -69,6 +88,22 @@
         <p class="muted small">Считаются проведённые уроки по ставке каждого занятия. Исключения (не платить, штраф) ставятся в «Журнале» или на «Главной».</p>`
         : empty('В этом месяце уроков не было')}
       </section>
+
+      ${intRows.length ? `
+      <section class="section">
+        <h2>⚡ Интенсивы</h2>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Интенсив</th><th>Даты</th><th>Продажи</th><th class="num">Выручка</th><th class="num">Учителю</th><th class="num">Прибыль</th></tr></thead>
+          <tbody>${intRows.map((r) => `
+            <tr><td><b>${esc(r.c.name)}</b><div class="muted small">${esc(teacherName[r.c.teacher_id] || 'без учителя')} · ${money(r.c.teacher_rate)} за урок</div></td>
+            <td class="nowrap">${fmtShort(r.c.start_date)} — ${r.c.end_date ? fmtShort(r.c.end_date) : '…'}</td>
+            <td>${r.s.map((x) => `${esc(x.name)}: ${x.count} × ${money(x.price)}`).join('<br>') || '—'}</td>
+            <td class="num">${money(r.income)}</td>
+            <td class="num">${money(r.plannedPay)}<div class="muted small">проведено ${r.done} из ${r.planned} ур.</div></td>
+            <td class="num"><b>${money(r.income - r.plannedPay)}</b></td></tr>`).join('')}</tbody>
+        </table></div>
+        <p class="muted small">Интенсив считается в месяце, когда он начался. Оплата учителю за проведённые уроки входит в «Зарплаты учителей» того месяца, когда были уроки.</p>
+      </section>` : ''}
 
       <section class="section">
         <h2>По курсам</h2>

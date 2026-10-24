@@ -1,7 +1,7 @@
 // Общие помощники интерфейса: экранирование, форматирование, окна, уведомления.
 (function () {
   const L = {
-    kind: { individual: 'Индивидуально', group: 'Группа' },
+    kind: { individual: 'Индивидуально', group: 'Группа', intensive: 'Интенсив' },
     mode: { online: 'Онлайн', offline: 'Офлайн' },
     reason: { sick: 'Заболел(а)', overslept: 'Проспал(а)', other: 'Другое' },
     caused: { student: 'Ученик', teacher: 'Учитель' },

@@ -16,6 +16,7 @@
     if (/duplicate key/i.test(msg)) return 'Такая запись уже есть';
     if (/row-level security/i.test(msg)) return 'Нет доступа';
     if (/school_schedule|school_lessons|is_staff|duration/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-2-school-schedule.sql в Supabase → SQL Editor';
+    if (/intensive|end_date|classes_kind_check/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-5-intensive.sql в Supabase → SQL Editor';
     if (/pay_with|account_id|bundle_id/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-4-bundle-payment.sql в Supabase → SQL Editor';
     if (/rate_history/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-1-rate-history.sql в Supabase → SQL Editor';
     return msg;
@@ -70,6 +71,8 @@
     students: () => all(() => sb.from('students').select('*').order('full_name')),
     enrollments: () => all(() => sb.from('enrollments').select('*').order('created_at')),
     stats: () => all(() => sb.from('enrollment_stats').select('*')),
+    // продажи интенсивов (только администратор)
+    sales: () => all(() => sb.from('intensive_sales').select('*').order('created_at')),
     roster: async () => check(await sb.rpc('class_roster')),
 
     payments(from, to) {

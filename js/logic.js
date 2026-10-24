@@ -75,8 +75,12 @@
     }
     for (const c of classes) {
       if (!c.active) continue;
-      // пока в занятии нет учеников, уроков по расписанию нет
-      if (starts && !(starts[c.id] && starts[c.id] <= date)) continue;
+      if (c.kind === 'intensive') {
+        // интенсив идёт только в свои даты (учеников в нём нет)
+        if (!c.start_date || date < c.start_date || (c.end_date && date > c.end_date)) continue;
+      } else if (starts && !(starts[c.id] && starts[c.id] <= date)) {
+        continue; // пока в занятии нет учеников, уроков по расписанию нет
+      }
       for (const slot of c.schedule || []) {
         if (Number(slot.day) !== wd || !slotActive(slot, date)) continue;
         const key = `${c.id}|${slot.time}`;

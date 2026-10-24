@@ -163,7 +163,7 @@
                   <span class="att-box"></span>
                   <span>${esc(r.student_name)}</span>
                 </label>`).join('')}
-            </div>` : later.length ? '' : `<div class="muted">В этом занятии нет учеников</div>`}
+            </div>` : later.length ? '' : c.kind === 'intensive' ? `<div class="muted">⚡ Интенсив — список учеников не нужен, просто сохраните «Урок прошёл».</div>` : `<div class="muted">В этом занятии нет учеников</div>`}
             ${later.length ? `
             <div class="later-box">
               <div class="muted small">По «дате первого урока» ещё не учились в этот день. Отметьте, если на самом деле были, — дата первого урока сдвинется на ${fmtShort(slot.date)}:</div>

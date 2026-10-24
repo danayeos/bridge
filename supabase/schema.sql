@@ -30,7 +30,7 @@ create table public.courses (
   id   serial primary key,
   name text not null unique
 );
-insert into public.courses (name) values ('SAT'), ('IELTS'), ('NUET'), ('Математика'), ('Английский');
+insert into public.courses (name) values ('SAT'), ('IELTS'), ('NUET'), ('Математика'), ('Английский'), ('Интенсив');
 
 -- ---------- Занятия (группа или индивидуальные уроки) ----------
 -- schedule: [{"day":1,"time":"16:00"}, ...]   day: 1 = Пн ... 7 = Вс
@@ -39,14 +39,26 @@ create table public.classes (
   name         text not null,
   course_id    int  not null references public.courses(id),
   teacher_id   uuid references public.teachers(id) on delete set null,
-  kind         text not null check (kind in ('individual', 'group')),
+  kind         text not null constraint classes_kind_check check (kind in ('individual', 'group', 'intensive')),
   mode         text not null check (mode in ('online', 'offline')),
   teacher_rate int  not null default 0,             -- оплата учителю за 1 урок, ₸
   schedule     jsonb not null default '[]'::jsonb,
   rate_history jsonb not null default '[]'::jsonb,   -- [{"from":"2026-10-01","rate":5000}]
   duration     int  not null default 60,              -- длительность урока, мин
+  start_date   date,                                  -- интенсив: первый день
+  end_date     date,                                  -- интенсив: последний день
   active       boolean not null default true,
   created_at   timestamptz not null default now()
+);
+
+-- ---------- Интенсив: продажи по тарифам (имена учеников не нужны) ----------
+create table public.intensive_sales (
+  id         uuid primary key default gen_random_uuid(),
+  class_id   uuid not null references public.classes(id) on delete cascade,
+  name       text not null,                 -- тариф: «Про», «Стандарт»
+  price      int  not null default 0,       -- цена за 1 место, ₸
+  count      int  not null default 0,       -- сколько человек купили
+  created_at timestamptz not null default now()
 );
 
 -- ---------- Ученики ----------
@@ -266,10 +278,11 @@ $$;
 -- все занятия школы: без ставок и цен
 create or replace function public.school_schedule()
 returns table (id uuid, name text, course_id int, teacher_id uuid, teacher_name text, kind text, mode text,
-               schedule jsonb, duration int, active boolean, start_date date, students int)
+               schedule jsonb, duration int, active boolean, start_date date, end_date date, students int)
 language sql stable security definer set search_path = public as $$
   select c.id, c.name, c.course_id, c.teacher_id, t.full_name, c.kind, c.mode, c.schedule, c.duration, c.active,
-         (select min(e.start_date) from enrollments e where e.class_id = c.id),
+         coalesce(c.start_date, (select min(e.start_date) from enrollments e where e.class_id = c.id)),
+         c.end_date,
          (select count(*)::int from enrollments e join students s on s.id = e.student_id
            where e.class_id = c.id and e.active and s.active)
   from classes c
@@ -325,6 +338,7 @@ alter table public.enrollments enable row level security;
 alter table public.payments    enable row level security;
 alter table public.lessons     enable row level security;
 alter table public.attendance  enable row level security;
+alter table public.intensive_sales enable row level security;
 
 -- профили: каждый видит себя, администратор — всех
 create policy profiles_self  on public.profiles for select using (id = auth.uid() or public.is_admin());
@@ -340,6 +354,7 @@ create policy courses_read  on public.courses for select using (auth.uid() is no
 create policy courses_admin on public.courses for all using (public.is_admin()) with check (public.is_admin());
 
 -- занятия
+create policy intensive_sales_admin on public.intensive_sales for all using (public.is_admin()) with check (public.is_admin());
 create policy classes_admin   on public.classes for all using (public.is_admin()) with check (public.is_admin());
 create policy classes_teacher on public.classes for select using (teacher_id = public.my_teacher_id());
 

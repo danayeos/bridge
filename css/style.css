@@ -482,3 +482,12 @@ details .table { margin-top: 6px; }
 .later-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--brand-line); border-radius: 10px; }
 .later-box .att-list { margin-top: 6px; }
 .mx-actions { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; flex-wrap: wrap; }
+
+/* интенсивы */
+.int-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.int-sum > div { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.int-sum span:first-child { font-size: 12px; color: var(--muted); }
+.int-sum b { font-size: 16px; }
+.sale-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: 6px; margin-bottom: 6px; align-items: center; }
+@media (max-width: 560px) { .sale-row { grid-template-columns: 1fr 1fr; } .sale-row [data-s=name] { grid-column: 1 / -1; } }
+.sale-head { margin-bottom: 2px; } @media (max-width: 560px) { .sale-head { display: none; } }

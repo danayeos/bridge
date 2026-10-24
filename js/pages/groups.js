@@ -6,7 +6,7 @@
     root.innerHTML = `<div class="loading">Загрузка…</div>`;
     const [classes, courses, roster] = await Promise.all([DB.classes(), DB.courses(), DB.roster()]);
     const courseName = Object.fromEntries(courses.map((c) => [c.id, c.name]));
-    const mine = classes.filter((c) => c.active && (ctx.role === 'admin' || c.teacher_id === ctx.teacher?.id))
+    const mine = classes.filter((c) => c.active && c.kind !== 'intensive' && (ctx.role === 'admin' || c.teacher_id === ctx.teacher?.id))
       .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'group' ? -1 : 1));
 
     root.innerHTML = `
