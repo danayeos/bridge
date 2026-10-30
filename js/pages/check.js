@@ -281,7 +281,8 @@
     const errs = list.filter((x) => x.level === 'err').length;
 
     root.innerHTML = `
-      <div class="page-head"><h1>🩺 Проверка данных</h1><button class="btn" id="re">Проверить ещё раз</button></div>
+      <div class="page-head"><h1>🩺 Проверка данных</h1>
+        <div><button class="btn" id="mig">Перенос сопровождения</button> <button class="btn" id="re">Проверить ещё раз</button></div></div>
       <p class="muted">Сайт сам ищет ошибки и странности в базе: чужое имя в занятии, ученик не в том занятии, пустая посещаемость, потерянные переносы, дубликаты учеников.
         Ничего не меняется, пока вы не нажмёте кнопку исправления.</p>
       ${list.length ? `<div class="tiles">
@@ -308,6 +309,8 @@
 
     const again = () => render(root);
     $$('#re', root).forEach((b) => b.onclick = again);
+    // перенос и резервная копия доступны всегда, даже если переносить нечего
+    $$('#mig', root).forEach((b) => b.onclick = () => migrateModal(d, again));
     $$('[data-fix]', root).forEach((b) => b.onclick = () => busy(b, async () => {
       const x = list[Number(b.dataset.fix)];
       if (!(await confirmBox(`${x.fix.label}?`))) return;
