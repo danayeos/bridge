@@ -183,7 +183,159 @@
   }
   const SUPPORT_TERMS = [[6, '6 месяцев'], [12, '1 год'], [24, '2 года'], [0, 'До конца (до поступления)']];
 
-  const api = { supportUntil, supportMonths, encodeSupport, SUPPORT_TERMS, packProgress, toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
+  // ---------- Способы оплаты: комиссия банка и налог (это разные вещи, храним отдельно) ----------
+  // Стартовые ставки, %. Администратор меняет их в «Деньги → Способы оплаты» (таблица settings).
+  // У рассрочки комиссия зависит от срока; null — ставку ещё не вписали.
+  const PAY_METHODS = [
+    { id: 'kaspi', name: 'Kaspi Pay', fee: 0.95, tax: 3 },
+    { id: 'kaspi_credit', name: 'Kaspi Pay рассрочка', tax: 3, terms: { 3: null, 6: null, 12: 15.5, 24: 17.5 } },
+    { id: 'gold', name: 'Алтын → Kaspi Gold', fee: 0, tax: 0 },
+    { id: 'halyk', name: 'Алтын → Halyk', fee: 0, tax: 0 },
+    { id: 'cash', name: 'Наличные', fee: 0, tax: 0 },
+    { id: 'kaspi_transfer', name: 'Kaspi перевод', fee: 0, tax: 0 },
+  ];
+  // Сохранённые ставки поверх стартовых (новые способы из кода появятся сами)
+  function payMethods(saved) {
+    return PAY_METHODS.map((d) => {
+      const s = (saved || []).find((x) => x.id === d.id) || {};
+      return { ...d, ...s, name: d.name, ...(d.terms ? { terms: { ...d.terms, ...(s.terms || {}) } } : {}) };
+    });
+  }
+  const isRate = (v) => v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
+  // Ставки способа на сегодня: {fee_pct, tax_pct}; null — ставка (например, рассрочки на 3 мес.) не указана.
+  function methodRates(methods, id, term) {
+    const m = (methods || PAY_METHODS).find((x) => x.id === id);
+    if (!m) return null;
+    const fee = m.terms ? m.terms[term] : m.fee;
+    if (!isRate(fee)) return null;
+    return { fee_pct: Number(fee), tax_pct: Number(m.tax) || 0 };
+  }
+  // Налог — всегда от полной суммы, которую заплатил клиент (не от суммы после комиссии).
+  function payCalc(amount, fee_pct, tax_pct) {
+    const fee = Math.round(((amount || 0) * (fee_pct || 0)) / 100);
+    const tax = Math.round(((amount || 0) * (tax_pct || 0)) / 100);
+    return { fee, tax, net: (amount || 0) - fee - tax };
+  }
+  // «На руки» у оплаты; у старых оплат без способа — вся сумма
+  const payNet = (p) => (p.net !== null && p.net !== undefined ? p.net : (p.amount || 0) - (p.fee || 0) - (p.tax || 0));
+
+  // ---------- Месяцы ----------
+  function addMonths(ym, n) { // '2026-10' + 3 → '2027-01'
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1 + n, 1);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  }
+  // Сколько месяцев от месяца даты from до месяца даты to включительно (минимум 1): окт 2026 → окт 2027 = 13
+  function monthsSpan(from, to) {
+    const [y1, m1] = from.split('-').map(Number);
+    const [y2, m2] = to.split('-').map(Number);
+    return Math.max(1, (y2 - y1) * 12 + (m2 - m1) + 1);
+  }
+
+  // ---------- Сопровождение ученика (тип оплаты на уровне ученика) ----------
+  // Оплаты сопровождения ДО этой даты получены давно: в доход не входят никогда, только справочно.
+  const SUPPORT_CUTOFF = '2026-09-01';
+  const isSupportStudent = (s) => !!s && s.pay_type === 'support';
+  // Сопровождение «≈ в месяц»: все оплаты / месяцы от первой оплаты до окончания. null — нет данных.
+  function supportPerMonth(sps, until) {
+    if (!until || !sps.length) return null;
+    const first = sps.map((p) => p.paid_at).sort()[0];
+    return Math.round(sps.reduce((n, p) => n + (p.amount || 0), 0) / monthsSpan(first, until));
+  }
+  // Доли одной оплаты по месяцам: поровну от месяца оплаты до месяца окончания включительно,
+  // остаток от округления — в последний месяц (сумма долей = оплате). null — нет даты окончания.
+  function supportShares(sp, until) {
+    if (!until) return null;
+    const n = monthsSpan(sp.paid_at, until);
+    const net = payNet(sp), gross = sp.amount || 0;
+    const bn = Math.floor(net / n), bg = Math.floor(gross / n);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const last = i === n - 1;
+      out.push({ month: addMonths(sp.paid_at.slice(0, 7), i), net: last ? net - bn * (n - 1) : bn, gross: last ? gross - bg * (n - 1) : bg, of: n });
+    }
+    return out;
+  }
+
+  // ---------- Отчёты по месяцам (из них потом строится финтаблица) ----------
+  const money0 = () => ({ count: 0, gross: 0, fee: 0, tax: 0, net: 0 });
+  function addPay(b, p) {
+    b.count += 1; b.gross += p.amount || 0; b.fee += p.fee || 0; b.tax += p.tax || 0; b.net += payNet(p);
+  }
+  // Оплата из таблицы payments, которая считается в доходе: не перенесённая в сопровождение ученика
+  // и не старое сопровождение курса до даты отсечки. legacySupport — id курсов со старым сопровождением.
+  const countsAsIncome = (p, legacySupport) => !p.migrated && !(legacySupport && legacySupport.has(p.enrollment_id) && p.paid_at < SUPPORT_CUTOFF);
+
+  // ФАКТИЧЕСКИЙ доход: сколько денег реально пришло в месяц (вся оплата — в месяц даты оплаты).
+  // → { 'YYYY-MM': { count, gross, fee, tax, net, packages, support, byMethod: { method: {...} } } }
+  function actualIncome(payments, supportPayments, legacySupport) {
+    const out = {};
+    const add = (p, kind) => {
+      const mo = p.paid_at.slice(0, 7);
+      const r = out[mo] ||= { ...money0(), packages: money0(), support: money0(), byMethod: {} };
+      addPay(r, p); addPay(r[kind], p); addPay(r.byMethod[p.method || ''] ||= money0(), p);
+    };
+    for (const p of payments) if (countsAsIncome(p, legacySupport)) add(p, legacySupport && legacySupport.has(p.enrollment_id) ? 'support' : 'packages');
+    for (const sp of supportPayments) if (sp.paid_at >= SUPPORT_CUTOFF) add(sp, 'support');
+    return out;
+  }
+
+  // ЗАРАБОТАННЫЙ доход: пакеты — в месяц оплаты, сопровождение — доля «на руки» в каждый месяц до окончания.
+  // untilOf(sp) — дата окончания сопровождения этого ученика.
+  // → { months: { 'YYYY-MM': { gross, net, packages: {gross, net}, support: {gross, net, items: [...]} } }, noUntil: [оплаты без даты окончания] }
+  function earnedIncome(payments, supportPayments, untilOf, legacySupport) {
+    const months = {};
+    const noUntil = [];
+    const row = (mo) => months[mo] ||= { gross: 0, net: 0, packages: { gross: 0, net: 0 }, support: { gross: 0, net: 0, items: [] } };
+    for (const p of payments) {
+      if (!countsAsIncome(p, legacySupport)) continue;
+      const r = row(p.paid_at.slice(0, 7));
+      const kind = legacySupport && legacySupport.has(p.enrollment_id) ? 'support' : 'packages';
+      r.gross += p.amount || 0; r.net += payNet(p);
+      r[kind].gross += p.amount || 0; r[kind].net += payNet(p);
+      if (kind === 'support') r.support.items.push({ payment: p, gross: p.amount || 0, net: payNet(p), of: 1 });
+    }
+    for (const sp of supportPayments) {
+      if (sp.paid_at < SUPPORT_CUTOFF) continue;
+      const shares = supportShares(sp, untilOf(sp));
+      if (!shares) { noUntil.push(sp); continue; }
+      for (const sh of shares) {
+        const r = row(sh.month);
+        r.gross += sh.gross; r.net += sh.net; r.support.gross += sh.gross; r.support.net += sh.net;
+        r.support.items.push({ payment: sp, gross: sh.gross, net: sh.net, of: sh.of });
+      }
+    }
+    return { months, noUntil };
+  }
+
+  // ---------- Перенос старого сопровождения (на уровне курса) в сопровождение ученика ----------
+  // Ничего не меняет — только раскладывает учеников: auto (переносим), mixed и conflicts (решает администратор).
+  function planSupportMigration({ students, enrollments, payments }) {
+    const auto = [], mixed = [], conflicts = [];
+    for (const s of students) {
+      const all = enrollments.filter((e) => e.student_id === s.id);
+      const sup = all.filter((e) => e.plan === 'support');
+      if (!sup.length) continue;
+      const pays = payments.filter((p) => !p.migrated && sup.some((e) => e.id === p.enrollment_id));
+      if (isSupportStudent(s) && !pays.length) continue; // уже перенесён
+      // смотрим на курсы, на которые ученик ходит сейчас (если таких нет — на все)
+      const act = all.filter((e) => e.active);
+      const ens = act.length ? act : all;
+      if (ens.some((e) => e.plan !== 'support')) { mixed.push({ student: s, support: sup, other: ens.filter((e) => e.plan !== 'support') }); continue; }
+      const untils = [...new Set(sup.map((e) => supportUntil(e) || ''))];
+      const reasons = [];
+      if (untils.length > 1) reasons.push(`у курсов разные сроки: ${untils.map((u) => u || 'до конца').join(', ')}`);
+      if (pays.length > 1) reasons.push(`несколько строк оплаты сопровождения (${pays.length})`);
+      const price = sup.reduce((n, e) => n + (e.package_price || 0), 0);
+      if (pays.length === 1 && price && pays[0].amount !== price) reasons.push(`оплата ${pays[0].amount} ₸, а цена сопровождения ${price} ₸`);
+      if (reasons.length) { conflicts.push({ student: s, reasons, payments: pays, enrollments: sup }); continue; }
+      auto.push({ student: s, until: untils[0] || null, payments: pays, enrollments: sup });
+    }
+    return { auto, mixed, conflicts };
+  }
+
+  const api = { PAY_METHODS, payMethods, methodRates, payCalc, payNet, addMonths, monthsSpan, SUPPORT_CUTOFF, isSupportStudent, supportPerMonth, supportShares, actualIncome, earnedIncome, planSupportMigration,
+    supportUntil, supportMonths, encodeSupport, SUPPORT_TERMS, packProgress, toDateStr, parseDate, today, addDays, weekday, monthRange, lessonsForDate, rosterFor, classStarts, slotActive, currentSchedule, mergeSchedule, paidUntil, teacherPaid, salaries, payStatus };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;
 })(typeof window !== 'undefined' ? window : globalThis);

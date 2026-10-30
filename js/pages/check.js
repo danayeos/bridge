@@ -7,11 +7,11 @@
 
   async function load() {
     const t = Logic.today();
-    const [students, enrollments, classes, courses, teachers, stats, roster, lessons, profiles] = await Promise.all([
+    const [students, enrollments, classes, courses, teachers, stats, roster, lessons, profiles, payments, sps] = await Promise.all([
       DB.students(), DB.enrollments(), DB.classes(), DB.courses(), DB.teachers(), DB.stats(), DB.roster(),
-      DB.lessons('2000-01-01', Logic.addDays(t, 400)), DB.profiles(),
+      DB.lessons('2000-01-01', Logic.addDays(t, 400)), DB.profiles(), DB.payments(), DB.supportPayments(),
     ]);
-    return { t, students, enrollments, classes, courses, teachers, stats, roster, lessons, profiles };
+    return { t, students, enrollments, classes, courses, teachers, stats, roster, lessons, profiles, payments, sps };
   }
 
   // Каждая проблема: { level: 'err' | 'warn' | 'info', group, text, fix?: {label, run}, open?: {label, run} }
@@ -100,7 +100,17 @@
           fix: { label: 'Сделать оплату отдельной', run: async () => DB.update('enrollments', e.id, { pay_with: null }) } });
       }
     }
-    for (const e of d.enrollments.filter((x) => x.active && x.plan === 'package' && studentById[x.student_id]?.active)) {
+    // ученики на сопровождении: пакетов и долгов нет, проверяем только дату окончания
+    for (const s of d.students.filter((x) => x.active && Logic.isSupportStudent(x))) {
+      if (!s.support_until) out.push({ level: 'warn', group: 'Сопровождение', text: `У сопровождения <b>${esc(s.full_name)}</b> нет даты окончания — его оплата не попадёт в «Заработанный доход».`, open: openStudent(s.id) });
+      if (!d.sps.some((p) => p.student_id === s.id)) out.push({ level: 'info', group: 'Сопровождение', text: `<b>${esc(s.full_name)}</b> на сопровождении, но оплата сопровождения не записана.`, open: openStudent(s.id) });
+    }
+    const plan = Logic.planSupportMigration(d);
+    const left = plan.auto.length + plan.mixed.length + plan.conflicts.length;
+    if (left) out.push({ level: 'warn', group: 'Сопровождение',
+      text: `Сопровождение у ${left} учеников записано по-старому (у курса, а не у ученика): перенести можно ${plan.auto.length}, решить вручную — ${plan.mixed.length + plan.conflicts.length}.`,
+      open: { label: 'Открыть перенос', run: (done) => migrateModal(d, done) } });
+    for (const e of d.enrollments.filter((x) => x.active && x.plan === 'package' && studentById[x.student_id]?.active && !Logic.isSupportStudent(studentById[x.student_id]))) {
       const r = statBy[e.id]?.remaining ?? e.initial_lessons;
       if (r <= -3) out.push({ level: 'warn', group: 'Оплаты',
         text: `<b>${esc(sName(e))}</b> (${esc(courseName[classById[e.class_id]?.course_id] || '')}): долг ${-r} ${lessonsWord(-r)}. Возможно, не внесена оплата или неверный «остаток уроков».`,
@@ -181,6 +191,75 @@
     return out.filter((x) => !x.key || (!seen.has(x.key) && seen.add(x.key)));
   }
 
+  // ---------- перенос старого сопровождения (у курса) в сопровождение ученика ----------
+  // Сначала — резервная копия всей базы в JSON, потом перенос только тех, у кого ВСЕ курсы на сопровождении.
+  // Старые строки оплат не удаляются: помечаются migrated и больше не считаются в итогах.
+  const BACKUP_TABLES = ['profiles', 'teachers', 'courses', 'classes', 'students', 'enrollments', 'payments', 'lessons', 'attendance', 'intensive_sales', 'support_payments', 'settings'];
+  async function backup() {
+    const out = { created_at: new Date().toISOString(), tables: {} };
+    for (const t of BACKUP_TABLES) {
+      try { out.tables[t] = await DB.table(t); } catch (e) { out.tables[t] = { error: e.message }; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));
+    a.download = `bridge-backup-${Logic.today()}-${new Date().toTimeString().slice(0, 5).replace(':', '')}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    return out;
+  }
+
+  function migrateModal(d, done) {
+    const plan = Logic.planSupportMigration(d);
+    const courseName = Object.fromEntries(d.courses.map((c) => [c.id, c.name]));
+    const classById = Object.fromEntries(d.classes.map((c) => [c.id, c]));
+    const course = (e) => { const c = classById[e.class_id] || {}; return `${courseName[c.course_id] || ''}${c.kind === 'group' ? ' (' + c.name + ')' : ''}${e.active ? '' : ' — не ходит'}`; };
+    const pays = (list) => list.length ? list.map((p) => `${fmtDate(p.paid_at)} — ${UI.money(p.amount)}`).join(', ') : 'оплата не найдена';
+    let saved = false;
+    const m = UI.modal('Перенос сопровождения', `
+      <p>Сопровождение теперь — тип ученика. Здесь старые записи «сопровождение у курса» переносятся в карточку ученика.
+        Строки оплат <b>не удаляются</b>: они помечаются «перенесено» и больше не считаются в итогах, а сумма и дата появляются в оплатах сопровождения ученика.</p>
+      <div class="alert">1. Сначала сохраните резервную копию всей базы (JSON-файл) и положите её в папку проекта <b>backup/</b>.
+        <button class="btn btn-sm btn-primary" data-backup>Скачать резервную копию</button></div>
+      <h4>Перенести автоматически (все курсы на сопровождении) — ${plan.auto.length}</h4>
+      ${plan.auto.length ? `<table class="table"><tbody>${plan.auto.map((x) => `
+        <tr><td><b>${esc(x.student.full_name)}</b></td><td>${x.enrollments.map((e) => esc(course(e))).join(', ')}</td>
+        <td>до ${x.until ? fmtDate(x.until) : '<span class="bad-text">дата не указана</span>'}</td><td class="small">${esc(pays(x.payments))}</td></tr>`).join('')}</tbody></table>` : empty('Нет')}
+      <h4>Смешанные — не меняю, решите сами — ${plan.mixed.length}</h4>
+      ${plan.mixed.length ? `<table class="table"><tbody>${plan.mixed.map((x) => `
+        <tr><td><b>${esc(x.student.full_name)}</b></td><td>сопровождение: ${x.support.map((e) => esc(course(e))).join(', ')}</td>
+        <td>пакеты: ${x.other.map((e) => esc(course(e))).join(', ')}</td></tr>`).join('')}</tbody></table>` : empty('Нет')}
+      <h4>Спорные данные — не меняю — ${plan.conflicts.length}</h4>
+      ${plan.conflicts.length ? `<table class="table"><tbody>${plan.conflicts.map((x) => `
+        <tr><td><b>${esc(x.student.full_name)}</b></td><td>${x.reasons.map(esc).join('; ')}</td><td class="small">${esc(pays(x.payments))}</td></tr>`).join('')}</tbody></table>` : empty('Нет')}
+      <div class="form-actions">
+        <button class="btn" data-close>Закрыть</button>
+        <button class="btn btn-primary" data-run disabled>2. Перенести ${plan.auto.length}</button>
+      </div>`, { wide: true });
+    const run = $$('[data-run]', m.el)[0];
+    const bk = $$('[data-backup]', m.el)[0];
+    bk.onclick = () => busy(bk, async () => {
+      await backup(); saved = true; run.disabled = !plan.auto.length;
+      toast('Резервная копия скачана — перенесите файл в папку backup/ проекта');
+    });
+    run.onclick = () => busy(run, async () => {
+      if (!saved) throw new Error('Сначала скачайте резервную копию');
+      if (!(await confirmBox(`Перевести ${plan.auto.length} учеников в тип «Сопровождение»? Оплаты не удаляются.`))) return;
+      // уже перенесённые строки (если прошлый перенос прервался) второй раз не копируем
+      const done0 = new Set(d.sps.map((x) => x.migrated_from).filter(Boolean));
+      for (const x of plan.auto) {
+        await DB.update('students', x.student.id, { pay_type: 'support', support_until: x.until });
+        for (const p of x.payments) {
+          if (!done0.has(p.id)) {
+            await DB.insert('support_payments', { student_id: x.student.id, paid_at: p.paid_at, amount: p.amount, method: p.method || null, term: p.term || null,
+              fee_pct: p.fee_pct ?? null, tax_pct: p.tax_pct ?? null, fee: p.fee || 0, tax: p.tax || 0, net: Logic.payNet(p), note: p.note || 'Сопровождение', migrated_from: p.id });
+          }
+          await DB.update('payments', p.id, { migrated: true });
+        }
+      }
+      toast(`Перенесено: ${plan.auto.length}`);
+      m.close(); done && done();
+    });
+  }
+
   function ctxFor(d) {
     return {
       classes: d.classes, courses: d.courses, teachers: d.teachers,
@@ -252,5 +331,5 @@
     return list.filter((x) => x.level !== 'info').length;
   }
 
-  window.CheckPage = { render, analyze, count };
+  window.CheckPage = { render, analyze, count, migrateModal, load };
 })();

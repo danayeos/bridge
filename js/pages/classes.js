@@ -229,12 +229,12 @@
             row.teacher_rate = rateOn(row.rate_history, Logic.today(), row.teacher_rate);
           }
         }
-        c ? await DB.update('classes', c.id, row) : await DB.insert('classes', row);
+        const saved = c ? await DB.update('classes', c.id, row) : await DB.insert('classes', row);
         if (rateFrom) {
           const newRate = row.rate_history ? rateOn(row.rate_history, rateFrom, row.teacher_rate) : row.teacher_rate;
           DB.check(await DB.sb.from('lessons').update({ rate: newRate }).eq('class_id', c.id).gte('date', rateFrom));
         }
-        m.close(); toast('Сохранено'); done();
+        m.close(); toast('Сохранено'); done(saved);
       });
     };
     const del = $('[data-del]', m.el);

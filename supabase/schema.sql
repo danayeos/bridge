@@ -62,12 +62,16 @@ create table public.intensive_sales (
 );
 
 -- ---------- Ученики ----------
+-- pay_type: monthly — ежемесячно (пакеты уроков)
+--           support — сопровождение (оплачено вперёд до support_until, оплаты — в support_payments)
 create table public.students (
-  id         uuid primary key default gen_random_uuid(),
-  full_name  text not null,
-  note       text,
-  active     boolean not null default true,
-  created_at timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  full_name     text not null,
+  note          text,
+  active        boolean not null default true,
+  pay_type      text not null default 'monthly' constraint students_pay_type_check check (pay_type in ('monthly', 'support')),
+  support_until date,                                -- до какой даты учится
+  created_at    timestamptz not null default now()
 );
 
 -- ---------- Ученик в занятии (свой пакет и цена) ----------
@@ -98,8 +102,43 @@ create table public.payments (
   lessons       int  not null,                       -- сколько уроков добавляет оплата
   note          text,
   bundle_id     uuid,                                -- строки одной общей оплаты за несколько курсов
+  method        text,                                -- kaspi, kaspi_credit, gold, halyk, cash (пусто — не указан)
+  term          int,                                 -- срок рассрочки, мес
+  fee_pct       numeric,                             -- % комиссии банка на момент оплаты
+  tax_pct       numeric,                             -- % налога на момент оплаты
+  fee           int  not null default 0,
+  tax           int  not null default 0,
+  net           int,                                 -- на руки (пусто у старых оплат — вся сумма)
+  migrated      boolean not null default false,      -- перенесена в сопровождение ученика, в итогах не считается
   created_by    uuid default auth.uid(),
   created_at    timestamptz not null default now()
+);
+
+-- ---------- Оплаты сопровождения (у ученика; в таблицу payments не пишутся) ----------
+create table public.support_payments (
+  id            uuid primary key default gen_random_uuid(),
+  student_id    uuid not null references public.students(id) on delete cascade,
+  paid_at       date not null default current_date,
+  amount        int  not null default 0,
+  method        text,
+  term          int,
+  fee_pct       numeric,
+  tax_pct       numeric,
+  fee           int  not null default 0,
+  tax           int  not null default 0,
+  net           int,
+  note          text,
+  migrated_from uuid references public.payments(id) on delete set null,  -- из какой старой строки перенесено
+  created_by    uuid default auth.uid(),
+  created_at    timestamptz not null default now()
+);
+create index support_payments_student_idx on public.support_payments (student_id);
+
+-- ---------- Настройки (ставки способов оплаты) ----------
+create table public.settings (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at timestamptz not null default now()
 );
 
 -- ---------- Уроки ----------
@@ -339,6 +378,8 @@ alter table public.payments    enable row level security;
 alter table public.lessons     enable row level security;
 alter table public.attendance  enable row level security;
 alter table public.intensive_sales enable row level security;
+alter table public.support_payments enable row level security;
+alter table public.settings    enable row level security;
 
 -- профили: каждый видит себя, администратор — всех
 create policy profiles_self  on public.profiles for select using (id = auth.uid() or public.is_admin());
@@ -362,6 +403,8 @@ create policy classes_teacher on public.classes for select using (teacher_id = p
 create policy students_admin    on public.students    for all using (public.is_admin()) with check (public.is_admin());
 create policy enrollments_admin on public.enrollments for all using (public.is_admin()) with check (public.is_admin());
 create policy payments_admin    on public.payments    for all using (public.is_admin()) with check (public.is_admin());
+create policy support_payments_admin on public.support_payments for all using (public.is_admin()) with check (public.is_admin());
+create policy settings_admin    on public.settings    for all using (public.is_admin()) with check (public.is_admin());
 
 -- уроки
 create policy lessons_admin on public.lessons for all using (public.is_admin()) with check (public.is_admin());

@@ -6,9 +6,9 @@
     root.innerHTML = `<div class="loading">Загрузка…</div>`;
     const t = Logic.today();
     const [mFrom, mTo] = Logic.monthRange(t.slice(0, 7));
-    const [students, enrollments, classes, courses, teachers, stats, lessons, monthPays] = await Promise.all([
+    const [students, enrollments, classes, courses, teachers, stats, lessons, monthPays, sps] = await Promise.all([
       DB.students(), DB.enrollments(), DB.classes(), DB.courses(), DB.teachers(), DB.stats(),
-      DB.lessons(Logic.addDays(t, -90), t), DB.payments(mFrom, mTo),
+      DB.lessons(Logic.addDays(t, -90), t), DB.payments(mFrom, mTo), DB.supportPayments(),
     ]);
     const studentById = Object.fromEntries(students.map((s) => [s.id, s]));
     const classById = Object.fromEntries(classes.map((c) => [c.id, c]));
@@ -18,15 +18,20 @@
     const enrById = Object.fromEntries(enrollments.map((e) => [e.id, e]));
 
     const active = enrollments.filter((e) => e.active && studentById[e.student_id]?.active);
-    const rows = active.map((e) => {
+    // ученики на сопровождении не платят ежемесячно — их нет в «Пора платить» и «Долгах»
+    const rows = active.filter((e) => !Logic.isSupportStudent(studentById[e.student_id])).map((e) => {
       const st = statBy[e.id] || { remaining: e.initial_lessons, last_payment: null };
       return { e, st, status: Logic.payStatus(e, st.remaining) };
     });
     const due = rows.filter((r) => r.status === 'due').sort((a, b) => a.st.remaining - b.st.remaining);
     const debt = rows.filter((r) => r.status === 'debt').sort((a, b) => a.st.remaining - b.st.remaining);
     // сопровождение: срок закончился или закончится в ближайшие 30 дней
-    const supEnd = active.filter((e) => e.plan === 'support' && Logic.supportUntil(e) && Logic.supportUntil(e) <= Logic.addDays(t, 30))
-      .sort((a, b) => Logic.supportUntil(a).localeCompare(Logic.supportUntil(b)));
+    const soon = Logic.addDays(t, 30);
+    const supEnd = students.filter((s) => s.active && Logic.isSupportStudent(s) && s.support_until && s.support_until <= soon)
+      .map((s) => ({ s, until: s.support_until, e: active.find((e) => e.student_id === s.id) }))
+      .concat(active.filter((e) => e.plan === 'support' && !Logic.isSupportStudent(studentById[e.student_id]) && Logic.supportUntil(e) && Logic.supportUntil(e) <= soon)
+        .map((e) => ({ s: studentById[e.student_id], until: Logic.supportUntil(e), e })))
+      .sort((a, b) => a.until.localeCompare(b.until));
 
     // нужно решить
     const absences = [];
@@ -34,13 +39,16 @@
     for (const l of lessons) {
       if (l.status === 'done' || l.status === 'cancelled') {
         for (const a of l.attendance || []) {
-          if (!a.present && !a.decision && enrById[a.enrollment_id]) absences.push({ l, a });
+          // у сопровождения пакета нет — решать «сгорает или нет» не нужно
+          if (!a.present && !a.decision && enrById[a.enrollment_id] && !Logic.isSupportStudent(studentById[enrById[a.enrollment_id].student_id])) absences.push({ l, a });
         }
       }
       if ((l.status === 'rescheduled' || l.status === 'cancelled') && l.caused_by === 'teacher' && !l.reviewed) teacherFault.push(l);
     }
 
-    const income = monthPays.reduce((s, p) => s + p.amount, 0);
+    // фактический доход месяца: пакеты + сопровождения с даты отсечки (старые сопровождения не считаются)
+    const legacy = new Set(enrollments.filter((e) => e.plan === 'support').map((e) => e.id));
+    const income = (Logic.actualIncome(monthPays, sps.filter((p) => p.paid_at >= mFrom && p.paid_at <= mTo), legacy)[t.slice(0, 7)] || { gross: 0 }).gross;
     const monthLessons = lessons.filter((l) => l.date >= mFrom && l.status === 'done').length;
 
     // курсы, которые оплачиваются одной оплатой с этим
@@ -99,11 +107,10 @@
       ${supEnd.length ? `
       <section class="section">
         <h2>Сопровождение заканчивается <span class="count">${supEnd.length}</span></h2>
-        <div class="list">${supEnd.map((e) => {
-          const u = Logic.supportUntil(e);
+        <div class="list">${supEnd.map(({ s, until: u, e }) => {
           return `
           <div class="list-row">
-            ${who(e)}
+            ${e && !Logic.isSupportStudent(s) ? who(e) : `<div class="who"><b>${esc(s.full_name)}</b><span class="muted small">сопровождение</span></div>`}
             <div class="row-meta"><span class="badge ${u < t ? 'badge-debt' : 'badge-due'}">${u < t ? 'закончилось' : 'до'} ${fmtShort(u)}</span></div>
             <span></span>
           </div>`;

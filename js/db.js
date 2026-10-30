@@ -16,6 +16,7 @@
     if (/duplicate key/i.test(msg)) return 'Такая запись уже есть';
     if (/row-level security/i.test(msg)) return 'Нет доступа';
     if (/school_schedule|school_lessons|is_staff|duration/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-2-school-schedule.sql в Supabase → SQL Editor';
+    if (/support_payments|pay_type|support_until|settings|migrated|fee_pct|tax_pct/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-6-student-support.sql в Supabase → SQL Editor';
     if (/intensive|end_date|classes_kind_check/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-5-intensive.sql в Supabase → SQL Editor';
     if (/pay_with|account_id|bundle_id/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-4-bundle-payment.sql в Supabase → SQL Editor';
     if (/rate_history/i.test(msg)) return 'Сначала обновите базу: запустите файл supabase/update-1-rate-history.sql в Supabase → SQL Editor';
@@ -74,6 +75,21 @@
     // продажи интенсивов (только администратор)
     sales: () => all(() => sb.from('intensive_sales').select('*').order('created_at')),
     roster: async () => check(await sb.rpc('class_roster')),
+    // вся таблица целиком (для резервной копии)
+    table: (name) => all(() => sb.from(name).select('*')),
+    // оплаты сопровождения учеников (после update-6; до него — пусто)
+    async supportPayments() {
+      try { return await all(() => sb.from('support_payments').select('*').order('paid_at')); } catch { return []; }
+    },
+    // ставки способов оплаты: стартовые из Logic.PAY_METHODS + сохранённые администратором
+    async payMethods() {
+      let saved = null;
+      try { saved = check(await sb.from('settings').select('*').eq('key', 'pay_methods').maybeSingle()); } catch { /* база ещё без настроек */ }
+      return Logic.payMethods(saved?.value);
+    },
+    async savePayMethods(methods) {
+      return check(await sb.from('settings').upsert({ key: 'pay_methods', value: methods, updated_at: new Date().toISOString() }, { onConflict: 'key' }).select().single());
+    },
 
     payments(from, to) {
       return all(() => {

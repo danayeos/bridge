@@ -7,7 +7,7 @@ if (/[?&]demo/.test(location.search)) {
   (function () {
     let n = 0;
     const uid = () => `00000000-0000-0000-0000-${String(++n).padStart(12, '0')}`;
-    const T = { profiles: [], teachers: [], courses: [], classes: [], students: [], enrollments: [], payments: [], lessons: [], attendance: [], intensive_sales: [] };
+    const T = { profiles: [], teachers: [], courses: [], classes: [], students: [], enrollments: [], payments: [], lessons: [], attendance: [], intensive_sales: [], support_payments: [], settings: [] };
     window.__T = T;
     const ROLE = new URLSearchParams(location.search).get('as') === 'teacher' ? 'teacher' : 'admin';
     const ADMIN = uid(), TEACH = uid();
@@ -96,8 +96,9 @@ if (/[?&]demo/.test(location.search)) {
             const rows = (Array.isArray(st.payload) ? st.payload : [st.payload]).map(clone);
             data = [];
             for (const r of rows) {
-              if (table !== 'attendance' && !r.id) r.id = uid();
-              const defaults = { lessons: { origin_id: null, fine: 0, teacher_paid: null, reviewed: false, rate: 0 }, enrollments: { active: true, plan: 'package', pay_with: null }, students: { active: true }, classes: { active: true, schedule: [] }, teachers: { active: true, user_id: null }, attendance: { decision: null } }[table] || {};
+              if (table !== 'attendance' && table !== 'settings' && !r.id) r.id = uid();
+              if (table === 'settings') { const ex = T.settings.find((x) => x.key === r.key); if (ex) { Object.assign(ex, r); data.push(ex); continue; } }
+              const defaults = { lessons: { origin_id: null, fine: 0, teacher_paid: null, reviewed: false, rate: 0 }, enrollments: { active: true, plan: 'package', pay_with: null }, students: { active: true, pay_type: 'monthly', support_until: null }, payments: { method: null, fee: 0, tax: 0, net: null, migrated: false }, classes: { active: true, schedule: [] }, teachers: { active: true, user_id: null }, attendance: { decision: null } }[table] || {};
               const row = { ...defaults, ...r };
               if (table === 'attendance') {
                 const ex = T.attendance.find((a) => a.lesson_id === row.lesson_id && a.enrollment_id === row.enrollment_id);
@@ -119,7 +120,7 @@ if (/[?&]demo/.test(location.search)) {
             const del = T[table].filter(match);
             T[table] = T[table].filter((r) => !match(r));
             if (table === 'lessons') { const ids = new Set(del.map((d) => d.id)); T.attendance = T.attendance.filter((a) => !ids.has(a.lesson_id)); T.lessons.forEach((l) => { if (ids.has(l.origin_id)) l.origin_id = null; }); }
-            if (table === 'students') { const ids = new Set(del.map((d) => d.id)); T.enrollments = T.enrollments.filter((x) => !ids.has(x.student_id)); }
+            if (table === 'students') { const ids = new Set(del.map((d) => d.id)); T.enrollments = T.enrollments.filter((x) => !ids.has(x.student_id)); T.support_payments = T.support_payments.filter((x) => !ids.has(x.student_id)); }
             if (table === 'enrollments' || table === 'students') { const ids = new Set(T.enrollments.map((x) => x.id)); T.payments = T.payments.filter((p) => ids.has(p.enrollment_id)); T.attendance = T.attendance.filter((a) => ids.has(a.enrollment_id)); T.enrollments.forEach((x) => { if (x.pay_with && !ids.has(x.pay_with)) x.pay_with = null; }); }
             if (table === 'classes') { const ids = new Set(del.map((d) => d.id)); T.enrollments = T.enrollments.filter((x) => !ids.has(x.class_id)); T.lessons = T.lessons.filter((x) => !ids.has(x.class_id)); }
             window.__T = T;
